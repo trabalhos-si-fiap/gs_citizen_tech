@@ -1,0 +1,9 @@
+{
+  "name": "reclame-ja-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "echo 'Configure o Angular CLI para iniciar o app web.'",
+    "build": "echo 'Configure o Angular CLI para gerar o build.'"
+  }
+}
