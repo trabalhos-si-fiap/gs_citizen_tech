@@ -1,0 +1,61 @@
+@import './theme.css';
+
+main {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.brand {
+  display: inline-block;
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  border-radius: 999px;
+  padding: 12px 22px;
+  font-weight: 700;
+  font-size: clamp(1.8rem, 2vw, 2.4rem);
+  letter-spacing: 0.02em;
+}
+
+.panel {
+  margin-top: 20px;
+  background: var(--color-surface-bright);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.swatch-color {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(26, 28, 30, 0.08);
+}
+
+h1 {
+  margin: 0;
+  color: var(--color-text-on-primary);
+  font-weight: 700;
+}
+
+p {
+  margin: 12px 0 0;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+printf '\n--- estrutura criada ---\n'
+find . -maxdepth 3 -type f | sed 's#^./##' | sort
