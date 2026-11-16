@@ -1,0 +1,721 @@
+openapi: 3.0.3
+info:
+  title: API do App de Reportes Cidadãos
+  version: 1.0.0
+  description: >
+    Contrato v1 entre o app Flutter e o backend FastAPI. Fonte da verdade para clientes e testes (RT-19).
+    Itens marcados [EXTENSÃO] não constam na tabela de endpoints do documento de Regras Técnicas.
+servers:
+  - url: http://localhost:8000
+    description: Desenvolvimento local (emulador Android usa http://10.0.2.2:8000)
+  - url: https://api.staging.exemplo.org
+    description: Homologação
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: reports
+  - name: me
+  - name: public
+  - name: agency
+  - name: uploads
+
+paths:
+  /health:
+    get:
+      tags: [public]
+      security: []
+      summary: Verificação de saúde
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Login por e-mail (OTP) ou Google
+      description: >
+        Passo 1 (e-mail): enviar só `email` -> 202 e o código chega por e-mail.
+        Passo 2: enviar `email` + `code` -> 200 com tokens.
+        Google: enviar `google_id_token` -> 200 com tokens.
+        No primeiro acesso é obrigatório enviar `consent`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Autenticado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "202":
+          description: Código enviado por e-mail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: otp_sent }
+                  expires_in: { type: integer, example: 600 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      summary: Renova o token de acesso (refresh rotativo) [EXTENSÃO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Novos tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthTokens" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/reports:
+    post:
+      tags: [reports]
+      summary: Cria reporte (idempotente pelo ID do cliente)
+      description: >
+        Se o `id` já existir para o mesmo usuário, devolve 200 com o reporte existente (RT-03).
+        Se `has_photo` for verdadeiro, a resposta traz `upload` com URL assinada para enviar a foto.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateReportRequest" }
+      responses:
+        "200":
+          description: Reporte já existia (reenvio idempotente)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportCreated" }
+        "201":
+          description: Reporte criado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportCreated" }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/nearby:
+    get:
+      tags: [reports]
+      security: [{}, { bearerAuth: [] }]
+      summary: Ocorrências por raio, categoria e status
+      parameters:
+        - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: lon, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: radius_m, in: query, schema: { type: integer, minimum: 50, maximum: 5000, default: 1000 } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/Category" } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: Lista de ocorrências próximas (agrupadas)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/NearbyItem" }
+                  next_cursor: { type: string, nullable: true }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}:
+    get:
+      tags: [reports]
+      summary: Detalhe, status, classificação e linha do tempo
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      responses:
+        "200":
+          description: Reporte
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/photo/complete:
+    post:
+      tags: [reports]
+      summary: Informa que a foto foi enviada ao storage [EXTENSÃO]
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sha256]
+              properties:
+                sha256: { type: string, description: "Hash SHA-256 (hex) do arquivo enviado" }
+      responses:
+        "202":
+          description: Foto aceita; processamento assíncrono
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  photo_status: { type: string, enum: [processing] }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/triage:
+    post:
+      tags: [reports]
+      summary: Cidadão confirma ou corrige categoria e órgão sugeridos (RN-10) [EXTENSÃO]
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TriageRequest" }
+      responses:
+        "200":
+          description: Triagem registrada; encaminhamento iniciado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/confirm:
+    post:
+      tags: [reports]
+      summary: Confirmação (+1), uma por usuário
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      responses:
+        "200":
+          description: Confirmação registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  confirmation_count: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/reopen:
+    post:
+      tags: [reports]
+      summary: Reabertura, quando permitida (RN-13)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Reaberto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/flag:
+    post:
+      tags: [reports]
+      summary: Sinaliza abuso para moderação (RN-35)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [ofensivo, dados_pessoais, falso, duplicado_abusivo, outro] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "202":
+          description: Sinalização recebida
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/nudge:
+    post:
+      tags: [reports]
+      summary: Cobrar novamente um reporte atrasado (RN-14) [EXTENSÃO]
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      responses:
+        "202":
+          description: Cobrança registrada e órgão notificado
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/me:
+    get:
+      tags: [me]
+      summary: Dados da conta [EXTENSÃO]
+      responses:
+        "200":
+          description: Usuário
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    delete:
+      tags: [me]
+      summary: Exclui a conta e os dados pessoais (RN-41, RT-51) [EXTENSÃO]
+      responses:
+        "202":
+          description: Exclusão iniciada
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/me/export:
+    get:
+      tags: [me]
+      summary: Exporta os dados do titular em JSON (RT-51) [EXTENSÃO]
+      responses:
+        "200":
+          description: Arquivo JSON com dados do usuário e seus reportes
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /v1/me/devices:
+    put:
+      tags: [me]
+      summary: Registra o token de push do aparelho [EXTENSÃO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [push_token, platform]
+              properties:
+                push_token: { type: string }
+                platform: { type: string, enum: [android, ios] }
+      responses:
+        "204":
+          description: Registrado
+
+  /v1/me/reports:
+    get:
+      tags: [me]
+      summary: Reportes do usuário (inclui anônimos via vínculo de notificação)
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
+      responses:
+        "200":
+          description: Página de reportes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReportSummary" }
+                  next_cursor: { type: string, nullable: true }
+
+  /v1/public/metrics:
+    get:
+      tags: [public]
+      security: []
+      summary: Indicadores do painel público (sem autenticação, sem dados pessoais)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/Category" } }
+        - { name: agency_id, in: query, schema: { type: string } }
+        - { name: format, in: query, schema: { type: string, enum: [json, csv], default: json } }
+      responses:
+        "200":
+          description: Métricas agregadas
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicMetrics" }
+            text/csv:
+              schema: { type: string }
+
+  /v1/agency/reports/{id}/status:
+    post:
+      tags: [agency]
+      security: [{ apiKeyAuth: [] }]
+      summary: Atualização de status pelo órgão (chave de API com escopo de território)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgencyStatusRequest" }
+      responses:
+        "200":
+          description: Status atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/uploads/{token}:
+    put:
+      tags: [uploads]
+      security: []
+      summary: Upload de foto no armazenamento local (somente dev; em produção usa-se URL assinada do S3)
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+      responses:
+        "204": { description: Recebido }
+        "403": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  parameters:
+    ReportId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  responses:
+    Error:
+      description: Erro no formato padrão (RT-17)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: validation_error
+            message: { type: string, example: "Informe uma foto ou uma descrição." }
+            field: { type: string, nullable: true, example: description }
+            correlation_id: { type: string, nullable: true }
+
+    Category:
+      type: string
+      enum: [risco_urbano, transporte_publico, saude_atendimento, a_classificar]
+
+    Urgency:
+      type: string
+      enum: [baixa, media, alta]
+
+    Status:
+      type: string
+      enum: [recebido, encaminhado, em_andamento, resolvido]
+
+    EventType:
+      type: string
+      enum:
+        - recebido
+        - encaminhado
+        - em_andamento
+        - resolvido
+        - reaberto
+        - contestado
+        - classificado
+        - classificacao_confirmada
+        - classificacao_corrigida
+        - enviado_moderacao
+        - vinculado_grupo
+        - confirmacao_adicionada
+        - cobrado
+        - sinalizado
+
+    LoginRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        google_id_token: { type: string }
+        consent:
+          type: object
+          required: [version, accepted_age]
+          properties:
+            version: { type: string, example: "2026-11-01" }
+            accepted_age: { type: boolean }
+      description: Informe `email` (passo 1), `email`+`code` (passo 2) ou `google_id_token`.
+
+    AuthTokens:
+      type: object
+      required: [access_token, refresh_token, expires_in, user]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer, example: 900 }
+        user: { $ref: "#/components/schemas/User" }
+
+    User:
+      type: object
+      required: [id, role]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email, nullable: true }
+        role: { type: string, enum: [citizen, agency, moderator, manager, admin] }
+        consent_version: { type: string }
+        created_at: { type: string, format: date-time }
+
+    CreateReportRequest:
+      type: object
+      required: [id, lat, lon, client_created_at]
+      properties:
+        id: { type: string, format: uuid, description: "UUID gerado no cliente (idempotência)" }
+        description: { type: string, maxLength: 1000, nullable: true }
+        has_photo: { type: boolean, default: false }
+        category: { $ref: "#/components/schemas/Category" }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+        location_accuracy_m: { type: number, nullable: true }
+        anonymous: { type: boolean, default: false }
+        client_created_at: { type: string, format: date-time, description: "Data/hora original (RN-11)" }
+      description: Exige `description` ou `has_photo=true` (RN-09).
+
+    UploadInstruction:
+      type: object
+      required: [url, method, expires_at]
+      properties:
+        url: { type: string, format: uri }
+        method: { type: string, enum: [PUT] }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        max_bytes: { type: integer }
+        expires_at: { type: string, format: date-time }
+
+    ReportCreated:
+      type: object
+      required: [id, protocol, status, received_at]
+      properties:
+        id: { type: string, format: uuid }
+        protocol: { type: string, example: RPT-2026-4KQ7TD }
+        status: { $ref: "#/components/schemas/Status" }
+        received_at: { type: string, format: date-time }
+        upload:
+          allOf:
+            - $ref: "#/components/schemas/UploadInstruction"
+          nullable: true
+        triage_state: { $ref: "#/components/schemas/TriageState" }
+
+    TriageState:
+      type: string
+      enum: [pending_classification, awaiting_user, confirmed, auto_confirmed, in_moderation]
+
+    Classification:
+      type: object
+      required: [category, urgency, confidence, immediate_risk, source]
+      properties:
+        category: { $ref: "#/components/schemas/Category" }
+        subcategory: { type: string }
+        urgency: { $ref: "#/components/schemas/Urgency" }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        immediate_risk: { type: boolean }
+        source: { type: string, enum: [ai, user, none], description: "none = IA indisponível (RT-30)" }
+
+    AgencyRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
+    TimelineEvent:
+      type: object
+      required: [id, type, actor, created_at]
+      properties:
+        id: { type: string }
+        type: { $ref: "#/components/schemas/EventType" }
+        actor: { type: string, example: "agency:prefeitura-demo" }
+        actor_label: { type: string, example: "Prefeitura Demo" }
+        justification: { type: string, nullable: true }
+        deadline: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ReportSummary:
+      type: object
+      required: [id, protocol, status, category, received_at]
+      properties:
+        id: { type: string, format: uuid }
+        protocol: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        overdue: { type: boolean }
+        category: { $ref: "#/components/schemas/Category" }
+        subcategory: { type: string, nullable: true }
+        lat: { type: number }
+        lon: { type: number }
+        received_at: { type: string, format: date-time }
+
+    ReportDetail:
+      allOf:
+        - $ref: "#/components/schemas/ReportSummary"
+        - type: object
+          properties:
+            description: { type: string, nullable: true }
+            photo_url: { type: string, format: uri, nullable: true, description: "URL assinada e temporária" }
+            anonymous: { type: boolean }
+            triage_state: { $ref: "#/components/schemas/TriageState" }
+            classification: { allOf: [{ $ref: "#/components/schemas/Classification" }], nullable: true }
+            agency: { allOf: [{ $ref: "#/components/schemas/AgencyRef" }], nullable: true }
+            deadline: { type: string, format: date-time, nullable: true }
+            confirmation_count: { type: integer }
+            reopened_count: { type: integer }
+            can_reopen: { type: boolean }
+            can_nudge: { type: boolean }
+            timeline:
+              type: array
+              items: { $ref: "#/components/schemas/TimelineEvent" }
+
+    TriageRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [confirm, correct] }
+        category: { $ref: "#/components/schemas/Category" }
+        subcategory: { type: string }
+      description: Em `correct`, `category` é obrigatório.
+
+    NearbyItem:
+      type: object
+      required: [id, status, category, lat, lon]
+      properties:
+        id: { type: string, format: uuid }
+        group_id: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/Status" }
+        category: { $ref: "#/components/schemas/Category" }
+        subcategory: { type: string, nullable: true }
+        lat: { type: number }
+        lon: { type: number }
+        confirmation_count: { type: integer }
+        received_at: { type: string, format: date-time }
+        distance_m: { type: number }
+
+    AgencyStatusRequest:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [in_progress, resolved, contest] }
+        deadline: { type: string, format: date-time, description: "Obrigatório em in_progress" }
+        justification: { type: string, maxLength: 1000, description: "Obrigatório em resolved e contest" }
+
+    PublicMetrics:
+      type: object
+      required: [period, totals, by_agency]
+      properties:
+        period:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+        totals:
+          type: object
+          properties:
+            reports: { type: integer }
+            avg_response_hours: { type: number, nullable: true }
+            resolution_rate: { type: number, nullable: true, minimum: 0, maximum: 1 }
+            recurrence: { type: integer }
+        by_agency:
+          type: array
+          items:
+            type: object
+            properties:
+              agency: { $ref: "#/components/schemas/AgencyRef" }
+              reports: { type: integer }
+              avg_response_hours: { type: number, nullable: true }
+              resolution_rate: { type: number, nullable: true }
+        by_month:
+          type: array
+          items:
+            type: object
+            properties:
+              month: { type: string, example: "2026-10" }
+              reports: { type: integer }
+        heatmap:
+          type: array
+          description: Células com contagem abaixo do mínimo são omitidas (RT-42)
+          items:
+            type: object
+            properties:
+              geohash: { type: string }
+              count: { type: integer }
+        methodology_url: { type: string, format: uri }
