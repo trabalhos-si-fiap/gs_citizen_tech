@@ -249,62 +249,74 @@ class ProfileTab extends StatelessWidget {
             // Settings Categories
             Text('LGPD & Privacidade', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: ReclameJaColors.surfaceBright,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ReclameJaColors.borderSlate),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.download, color: ReclameJaColors.secondaryEmerald),
-                    title: const Text('Exportar meus dados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Portabilidade de informações em formato JSON', style: TextStyle(fontSize: 11)),
-                    trailing: const Icon(Icons.chevron_right, size: 16),
-                    onTap: () => _exportDataAsJson(context),
+            Material(
+              color: ReclameJaColors.surfaceBright,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: ReclameJaColors.borderSlate),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.download, color: ReclameJaColors.secondaryEmerald),
+                        title: const Text('Exportar meus dados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        subtitle: const Text('Portabilidade de informações em formato JSON', style: TextStyle(fontSize: 11)),
+                        trailing: const Icon(Icons.chevron_right, size: 16),
+                        onTap: () => _exportDataAsJson(context),
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.delete_forever, color: ReclameJaColors.alertRed),
+                        title: const Text('Excluir minha conta', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ReclameJaColors.alertRed)),
+                        subtitle: const Text('Apagar dados pessoais sob as regras da LGPD', style: TextStyle(fontSize: 11)),
+                        trailing: const Icon(Icons.chevron_right, size: 16, color: ReclameJaColors.alertRed),
+                        onTap: () => _confirmAccountDeletion(context),
+                      ),
+                    ],
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    leading: const Icon(Icons.delete_forever, color: ReclameJaColors.alertRed),
-                    title: const Text('Excluir minha conta', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ReclameJaColors.alertRed)),
-                    subtitle: const Text('Apagar dados pessoais sob as regras da LGPD', style: TextStyle(fontSize: 11)),
-                    trailing: const Icon(Icons.chevron_right, size: 16, color: ReclameJaColors.alertRed),
-                    onTap: () => _confirmAccountDeletion(context),
-                  ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 24),
 
             Text('Termos Legais', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: ReclameJaColors.surfaceBright,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: ReclameJaColors.borderSlate),
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.description_outlined, color: ReclameJaColors.textDark),
-                    title: const Text('Termos de Uso', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    trailing: const Icon(Icons.chevron_right, size: 16),
-                    onTap: () {
-                      _showDialog(context, 'Termos de Uso', 'Termos de Uso oficiais do Voz Cidadã. Comprometimento mútuo para melhorias na infraestrutura e transparência na zeladoria pública.');
-                    },
+            Material(
+              color: ReclameJaColors.surfaceBright,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: ReclameJaColors.borderSlate),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.description_outlined, color: ReclameJaColors.textDark),
+                        title: const Text('Termos de Uso', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        trailing: const Icon(Icons.chevron_right, size: 16),
+                        onTap: () {
+                          _showDialog(context, 'Termos de Uso', 'Termos de Uso oficiais do Voz Cidadã. Comprometimento mútuo para melhorias na infraestrutura e transparência na zeladoria pública.');
+                        },
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.lock_outline, color: ReclameJaColors.textDark),
+                        title: const Text('Política de Privacidade', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        trailing: const Icon(Icons.chevron_right, size: 16),
+                        onTap: () {
+                          _showDialog(context, 'Política de Privacidade', 'Política de Privacidade regulamentada pela LGPD (Lei 13.709/18). Seus dados pessoais estão criptografados e seguros.');
+                        },
+                      ),
+                    ],
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    leading: const Icon(Icons.lock_outline, color: ReclameJaColors.textDark),
-                    title: const Text('Política de Privacidade', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                    trailing: const Icon(Icons.chevron_right, size: 16),
-                    onTap: () {
-                      _showDialog(context, 'Política de Privacidade', 'Política de Privacidade regulamentada pela LGPD (Lei 13.709/18). Seus dados pessoais estão criptografados e seguros.');
-                    },
-                  ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 32),
