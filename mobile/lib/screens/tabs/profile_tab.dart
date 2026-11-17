@@ -362,7 +362,7 @@ class ProfileTab extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: ReclameJaColors.surfaceLow,
                   shape: BoxShape.circle,
                 ),

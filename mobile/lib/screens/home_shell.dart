@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import 'welcome_screen.dart';
 import 'tabs/map_tab.dart';
+import 'tabs/feed_tab.dart';
 import 'tabs/reports_tab.dart';
 import 'tabs/region_tab.dart';
 import 'tabs/profile_tab.dart';
@@ -33,6 +34,7 @@ class _HomeShellState extends State<HomeShell> {
     _tabs = [
       MapTab(isVisitor: widget.isVisitor, userName: widget.userName),
       ReportsTab(isVisitor: widget.isVisitor),
+      FeedTab(isVisitor: widget.isVisitor, userName: widget.userName),
       RegionTab(isVisitor: widget.isVisitor),
       ProfileTab(isVisitor: widget.isVisitor, userName: widget.userName),
     ];
@@ -147,6 +149,11 @@ class _HomeShellState extends State<HomeShell> {
               icon: Icon(Icons.assignment_outlined),
               selectedIcon: Icon(Icons.assignment, color: ReclameJaColors.textDark),
               label: 'Reportes',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.dynamic_feed_outlined),
+              selectedIcon: Icon(Icons.dynamic_feed, color: ReclameJaColors.textDark),
+              label: 'Feed',
             ),
             NavigationDestination(
               icon: Icon(Icons.analytics_outlined),

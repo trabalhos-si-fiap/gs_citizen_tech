@@ -73,7 +73,7 @@ class _MapTabState extends State<MapTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Acesso Restrito', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
-        content: Text('Para registrar problemas urbanos de zeladoria, por favor crie uma conta ou faça login no Voz Cidadã.'),
+        content: const Text('Para registrar problemas urbanos de zeladoria, por favor crie uma conta ou faça login no Reclame Já.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -101,7 +101,6 @@ class _MapTabState extends State<MapTab> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final filteredReports = _getFilteredReports();
 
     return Scaffold(
       body: Stack(
@@ -236,19 +235,10 @@ class _MapTabState extends State<MapTab> {
             ),
           ),
 
-          // 3. Pin Preview Overlay Card (when a pin is clicked)
-          if (_selectedMapReport != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 230,
-              child: _buildPinPreviewCard(_selectedMapReport!),
-            ),
-
-          // 4. Floating lateral controls
+          // 3. Floating lateral controls
           Positioned(
             right: 16,
-            bottom: 155,
+            bottom: 96,
             child: Column(
               children: [
                 _FloatingMapButton(
@@ -275,96 +265,18 @@ class _MapTabState extends State<MapTab> {
             ),
           ),
 
-          // 5. Sliding Bottom Sheet "Perto de você"
-          DraggableScrollableSheet(
-            initialChildSize: 0.16,
-            minChildSize: 0.16,
-            maxChildSize: 0.50,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: const BoxDecoration(
-                  color: ReclameJaColors.surfaceBright,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, -3)),
-                  ],
-                ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                  children: [
-                    // Handlebar
-                    Center(
-                      child: Container(
-                        width: 48,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: ReclameJaColors.surfaceDim,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Perto de você',
-                              style: textTheme.headlineSmall?.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              'num raio de 800m • ${filteredReports.length} ocorrências',
-                              style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
-                            ),
-                          ],
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Exibindo todos os chamados próximos.')),
-                            );
-                          },
-                          child: const Row(
-                            children: [
-                              Text('Ver todas', style: TextStyle(color: ReclameJaColors.textMuted, fontSize: 13, fontWeight: FontWeight.bold)),
-                              Icon(Icons.chevron_right, size: 16, color: ReclameJaColors.textMuted),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+          // 4. Pin Preview Overlay Card (when a pin is clicked)
+          if (_selectedMapReport != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 96,
+              child: _buildPinPreviewCard(_selectedMapReport!),
+            ),
 
-                    // List of cards
-                    if (filteredReports.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 24.0),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.assignment_turned_in, size: 40, color: ReclameJaColors.surfaceDim),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Nenhum chamado pendente nesta categoria.',
-                              style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      ...filteredReports.map((report) => _buildReportCard(report)),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          // Prominent floating "+ Reportar" trigger centrally overlaying bottom sheets
+          // 5. Prominent floating "+ Reportar" trigger
           Positioned(
-            bottom: 30,
+            bottom: 24,
             left: 24,
             right: 24,
             child: SizedBox(
@@ -610,141 +522,6 @@ class _MapTabState extends State<MapTab> {
     );
   }
 
-  Widget _buildReportCard(Report report) {
-    final textTheme = Theme.of(context).textTheme;
-    final isResolved = report.status == 'Resolvido';
-    final isInProgress = report.status == 'Em andamento';
-    
-    Color statusColor = ReclameJaColors.textMuted;
-    Color statusBg = ReclameJaColors.surfaceLow;
-    if (isResolved) {
-      statusColor = ReclameJaColors.secondaryEmerald;
-      statusBg = const Color(0xFFDCFCE7);
-    } else if (isInProgress) {
-      statusColor = Colors.amber.shade900;
-      statusBg = const Color(0xFFFEF9C3);
-    }
-
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 10),
-      color: ReclameJaColors.surfaceLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: ReclameJaColors.borderSlate.withValues(alpha: 0.5)),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => ReportDetailScreen(report: report)),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: isResolved 
-                          ? const Color(0xFFDCFCE7) 
-                          : isInProgress 
-                              ? const Color(0xFFFEF9C3) 
-                              : const Color(0xFFE0F2FE),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      report.category == 'Transporte' 
-                          ? Icons.directions_bus 
-                          : report.category == 'Saúde' 
-                              ? Icons.local_hospital 
-                              : Icons.construction,
-                      color: isResolved 
-                          ? ReclameJaColors.secondaryEmerald 
-                          : isInProgress 
-                              ? Colors.amber.shade800 
-                              : ReclameJaColors.tertiaryBlue,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          report.title,
-                          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 14),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          report.location,
-                          style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusBg,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          report.status,
-                          style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const Divider(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.thumb_up_alt_outlined, size: 14, color: ReclameJaColors.secondaryEmerald),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${report.confirmationCount} pessoas confirmaram',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ReclameJaColors.secondaryEmerald),
-                      ),
-                    ],
-                  ),
-                  const Row(
-                    children: [
-                      Text('Detalhes', style: TextStyle(color: ReclameJaColors.secondaryEmerald, fontSize: 12, fontWeight: FontWeight.bold)),
-                      Icon(Icons.arrow_forward, size: 12, color: ReclameJaColors.secondaryEmerald),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _UserLocationPin extends StatelessWidget {

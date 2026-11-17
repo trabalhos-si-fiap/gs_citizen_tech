@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../app_theme.dart';
 import '../../services/report_store.dart';
 import '../report_detail_screen.dart';
@@ -420,7 +419,7 @@ class _ReportsTabState extends State<ReportsTab> {
             children: [
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: ReclameJaColors.surfaceLow,
                   shape: BoxShape.circle,
                 ),

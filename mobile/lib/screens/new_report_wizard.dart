@@ -200,7 +200,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
               const SizedBox(width: 4),
               Switch(
                 value: _isOfflineSimulated,
-                activeColor: ReclameJaColors.primaryYellow,
+                activeThumbColor: ReclameJaColors.primaryYellow,
                 onChanged: (val) {
                   setState(() {
                     _isOfflineSimulated = val;
@@ -381,12 +381,12 @@ class _NewReportWizardState extends State<NewReportWizard> {
                   ),
                   const SizedBox(height: 12),
                   // Emergency Quick Dial Links
-                  Row(
+                  const Row(
                     children: [
                       _EmergencyDialButton(label: 'Polícia 190', number: '190'),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       _EmergencyDialButton(label: 'SAMU 192', number: '192'),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       _EmergencyDialButton(label: 'Bombeiros 193', number: '193'),
                     ],
                   ),
@@ -412,9 +412,9 @@ class _NewReportWizardState extends State<NewReportWizard> {
       ),
       bottomSheet: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: ReclameJaColors.surfaceBright,
-          border: const Border(top: BorderSide(color: ReclameJaColors.borderSlate)),
+          border: Border(top: BorderSide(color: ReclameJaColors.borderSlate)),
         ),
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
@@ -1007,7 +1007,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
                     ),
                     Switch(
                       value: _isAnonymous,
-                      activeColor: ReclameJaColors.secondaryEmerald,
+                      activeThumbColor: ReclameJaColors.secondaryEmerald,
                       onChanged: (val) {
                         setState(() {
                           _isAnonymous = val;
