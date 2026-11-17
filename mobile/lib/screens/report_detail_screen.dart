@@ -660,15 +660,29 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Voz da Vizinhança', style: textTheme.titleMedium),
-                      // Mock avatar stack
+                      Flexible(
+                        child: Text(
+                          'Voz da Vizinhança',
+                          style: textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Mock avatar stack (overlapping avatars)
                       const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircleAvatar(radius: 12, backgroundColor: Colors.blue, child: Text('JS', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold))),
-                          SizedBox(width: -6),
-                          CircleAvatar(radius: 12, backgroundColor: Colors.green, child: Text('MC', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold))),
-                          SizedBox(width: -6),
-                          CircleAvatar(radius: 12, backgroundColor: Colors.amber, child: Text('RL', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold))),
+                          SizedBox(
+                            width: 60,
+                            height: 24,
+                            child: Stack(
+                              children: [
+                                Positioned(left: 0, child: CircleAvatar(radius: 12, backgroundColor: Colors.blue, child: Text('JS', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
+                                Positioned(left: 18, child: CircleAvatar(radius: 12, backgroundColor: Colors.green, child: Text('MC', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
+                                Positioned(left: 36, child: CircleAvatar(radius: 12, backgroundColor: Colors.amber, child: Text('RL', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
+                              ],
+                            ),
+                          ),
                           SizedBox(width: 4),
                           Text('+12', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ReclameJaColors.textMuted)),
                         ],
