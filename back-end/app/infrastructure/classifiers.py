@@ -184,6 +184,38 @@ class OllamaClassifier:
             ) from error
 
 
+class FallbackClassifier:
+    """Tenta o classificador principal e, se indisponível, o secundário."""
+
+    def __init__(self, primary: Classifier, secondary: Classifier) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def classify(
+        self,
+        payload: ClassificationInput,
+        *,
+        model: str,
+    ) -> ClassificationResult:
+        try:
+            return self._primary.classify(payload, model=model)
+        except ClassifierUnavailable:
+            return self._secondary.classify(payload, model=model)
+
+
+def _is_local_host(hostname: str) -> bool:
+    # Aceita o próprio host, IPs privados e nomes de serviço da rede interna do
+    # compose (sem domínio, ex.: "ollama"). Hosts com domínio público são
+    # recusados para não enviar reportes a terceiros.
+    if hostname == "localhost" or "." not in hostname:
+        return True
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
 def build_classifier(config: Settings = settings) -> Classifier:
     if config.classifier == "null":
         return NullClassifier()
@@ -194,17 +226,16 @@ def build_classifier(config: Settings = settings) -> Classifier:
     parsed_url = urlparse(config.ollama_base_url)
     if parsed_url.scheme != "http" or parsed_url.hostname is None:
         raise RuntimeError("OLLAMA_BASE_URL deve ser uma URL HTTP local.")
-    try:
-        local_address = parsed_url.hostname == "localhost" or ip_address(
-            parsed_url.hostname
-        ).is_loopback
-    except ValueError:
-        local_address = False
-    if not local_address:
+    if not _is_local_host(parsed_url.hostname):
         raise RuntimeError(
             "Ollama deve estar no próprio host para evitar enviar reportes a terceiros."
         )
-    return OllamaClassifier(
+    classifier: Classifier = OllamaClassifier(
         config.ollama_base_url,
         timeout_seconds=config.ai_timeout_seconds,
     )
+    if config.ai_fallback == "fake":
+        if config.environment != "development":
+            raise RuntimeError("AI_FALLBACK=fake só pode ser usado em development.")
+        classifier = FallbackClassifier(classifier, FakeClassifier())
+    return classifier
