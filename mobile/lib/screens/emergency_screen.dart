@@ -9,12 +9,15 @@ class EmergencyScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Chamada de Emergência', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
-        content: Text('Dispositivo simulando chamada de suporte para $title ($number).'),
+        title: Text('Chamada de Emergência',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        content: Text(
+            'Dispositivo simulando chamada de suporte para $title ($number).'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Desconectar', style: TextStyle(color: ReclameJaColors.alertRed)),
+            child: const Text('Desconectar',
+                style: TextStyle(color: ReclameJaColors.alertRed)),
           ),
         ],
       ),
@@ -50,7 +53,8 @@ class EmergencyScreen extends StatelessWidget {
                       color: ReclameJaColors.primaryYellow,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.emergency, color: ReclameJaColors.textDark, size: 32),
+                    child: const Icon(Icons.emergency,
+                        color: ReclameJaColors.textDark, size: 32),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -79,7 +83,8 @@ class EmergencyScreen extends StatelessWidget {
 
             Text(
               'Contatos Rápidos de Socorro Vital',
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style:
+                  textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -90,7 +95,8 @@ class EmergencyScreen extends StatelessWidget {
               icon: Icons.shield,
               title: 'POLÍCIA MILITAR',
               number: '190',
-              description: 'Para ocorrências de crimes ativos, roubos, perturbação grave de sossego ou acidentes com violência.',
+              description:
+                  'Para ocorrências de crimes ativos, roubos, perturbação grave de sossego ou acidentes com violência.',
               color: Colors.blue.shade900,
             ),
             const SizedBox(height: 12),
@@ -101,7 +107,8 @@ class EmergencyScreen extends StatelessWidget {
               icon: Icons.local_hospital,
               title: 'SAMU - SUPORTE DE SAÚDE',
               number: '192',
-              description: 'Para socorro de urgências médicas de saúde, acidentes com feridos, infartos ou partos imediatos.',
+              description:
+                  'Para socorro de urgências médicas de saúde, acidentes com feridos, infartos ou partos imediatos.',
               color: ReclameJaColors.alertRed,
             ),
             const SizedBox(height: 12),
@@ -112,7 +119,8 @@ class EmergencyScreen extends StatelessWidget {
               icon: Icons.local_fire_department,
               title: 'CORPO DE BOMBEIROS',
               number: '193',
-              description: 'Para incêndios ativos, vazamentos de gás perigosos, resgate de vítimas presas em ferragens ou desabamentos.',
+              description:
+                  'Para incêndios ativos, vazamentos de gás perigosos, resgate de vítimas presas em ferragens ou desabamentos.',
               color: Colors.orange.shade800,
             ),
             const SizedBox(height: 24),
@@ -129,18 +137,22 @@ class EmergencyScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.info, size: 14, color: ReclameJaColors.textMuted),
+                      const Icon(Icons.info,
+                          size: 14, color: ReclameJaColors.textMuted),
                       const SizedBox(width: 6),
                       Text(
                         'Importância da Prevenção',
-                        style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold, color: ReclameJaColors.textMuted),
+                        style: textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: ReclameJaColors.textMuted),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'A segurança comunitária preventiva (postes de luz apagados, bueiros rompidos, árvores de risco) deve ser encaminhada via reporte de zeladoria comum para triagem operacional.',
-                    style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted, height: 1.4),
+                    style: textTheme.bodySmall?.copyWith(
+                        color: ReclameJaColors.textMuted, height: 1.4),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -200,7 +212,8 @@ class EmergencyScreen extends StatelessWidget {
                         ),
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: color,
                             borderRadius: BorderRadius.circular(12),

@@ -157,7 +157,8 @@ class AppTheme {
           color: const Color(0xFF64748B),
           fontSize: 14,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.5),
@@ -168,11 +169,13 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: ReclameJaColors.secondaryEmerald, width: 2.0),
+          borderSide: const BorderSide(
+              color: ReclameJaColors.secondaryEmerald, width: 2.0),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: ReclameJaColors.alertRed, width: 1.5),
+          borderSide:
+              const BorderSide(color: ReclameJaColors.alertRed, width: 1.5),
         ),
       ),
     );

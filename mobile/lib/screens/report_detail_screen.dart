@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../services/report_store.dart';
+import '../services/api_client.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final Report report;
@@ -23,13 +24,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     super.initState();
     _report = widget.report;
     _listenToStore();
+    _refreshFromApi();
   }
 
   void _listenToStore() {
     // Keep internal screen state updated if the store changes (e.g. comments or confirmations)
     ReportStore().reportsStream.listen((list) {
       if (mounted) {
-        final updated = list.firstWhere((r) => r.id == _report.id, orElse: () => _report);
+        final updated =
+            list.firstWhere((r) => r.id == _report.id, orElse: () => _report);
         setState(() {
           _report = updated;
         });
@@ -51,7 +54,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           children: [
             const Icon(Icons.check_circle_outline, color: Colors.white),
             const SizedBox(width: 8),
-            Text('Protocolo ${_report.id} copiado para a área de transferência!'),
+            Text(
+                'Protocolo ${_report.id} copiado para a área de transferência!'),
           ],
         ),
         backgroundColor: ReclameJaColors.secondaryEmerald,
@@ -59,31 +63,77 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  void _toggleSupport() {
-    ReportStore().toggleUserConfirmation(_report.id);
-    final text = _report.isUserConfirmed 
-        ? 'Apoio removido.' 
-        : 'Você confirmou que também enfrenta este problema. Isso eleva a prioridade do chamado!';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: ReclameJaColors.secondaryEmerald,
-      ),
-    );
+  Future<void> _refreshFromApi() async {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) return;
+    try {
+      final detail = await ApiClient().getReport(apiId);
+      ReportStore().upsertFromApi(detail);
+      final response = await ApiClient().getComments(apiId);
+      final items = (response['items'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (comment) => {
+              'author': 'Munícipe',
+              'time': comment['created_at']?.toString() ?? '',
+              'text': comment['content']?.toString() ?? '',
+              'isOfficial': 'false',
+            },
+          )
+          .toList();
+      ReportStore().updateComments(apiId, items);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Não foi possível atualizar o reporte agora.')),
+      );
+    }
   }
 
-  void _addComment() {
+  Future<void> _toggleSupport() async {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showFriendlyError('Essa confirmação estará disponível após o envio.');
+      return;
+    }
+    try {
+      final result = await ApiClient().confirmReport(apiId);
+      final count = (result['confirmation_count'] as num).toInt();
+      ReportStore().updateConfirmationCount(apiId, count);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Obrigado por confirmar que essa situação também acontece por aí.'),
+          backgroundColor: ReclameJaColors.secondaryEmerald,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showFriendlyError(
+        'Não foi possível registrar sua confirmação. Talvez você já tenha confirmado este reporte.',
+      );
+    }
+  }
+
+  Future<void> _addComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
-
-    final comment = {
-      'author': 'Marina (Você)',
-      'time': 'Agora mesmo',
-      'text': text,
-      'isOfficial': 'false',
-    };
-
-    ReportStore().addComment(_report.id, comment);
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showFriendlyError('Você poderá comentar quando o reporte for enviado.');
+      return;
+    }
+    try {
+      await ApiClient().addComment(reportId: apiId, content: text);
+      await _refreshFromApi();
+    } catch (error) {
+      if (!mounted) return;
+      _showFriendlyError('Não foi possível enviar seu comentário agora.');
+      return;
+    }
+    if (!mounted) return;
     _commentController.clear();
     FocusScope.of(context).unfocus();
 
@@ -95,13 +145,30 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  void _reopenReport() {
+  void _showFriendlyError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: ReclameJaColors.alertRed,
+      ),
+    );
+  }
+
+  Future<void> _reopenReport() async {
     if (_report.status != 'Resolvido') return;
 
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showFriendlyError('A reabertura estará disponível após o envio.');
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Reabrir Chamado', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        title: Text('Reabrir Chamado',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
         content: Text(
           'O problema na via ainda persiste após o recapeamento oficial? Se sim, você pode solicitar a reabertura do chamado técnico para nova vistoria.',
           style: GoogleFonts.hankenGrotesk(),
@@ -109,31 +176,36 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar', style: TextStyle(color: ReclameJaColors.textMuted)),
+            child: const Text('Cancelar',
+                style: TextStyle(color: ReclameJaColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ReclameJaColors.primaryYellow,
               foregroundColor: ReclameJaColors.textDark,
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              
-              final event = ReportEvent(
-                title: 'Chamado Reaberto',
-                time: '16/11 às 17:05',
-                desc: 'Solicitada nova vistoria devido a reincidência ou persistência do problema original pelo cidadão.',
-                actor: 'Marina (Você)',
-              );
-              
-              ReportStore().updateReportStatus(_report.id, 'Encaminhado', event);
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Ocorrência reaberta e re-encaminhada com sucesso!'),
-                  backgroundColor: ReclameJaColors.secondaryEmerald,
-                ),
-              );
+              try {
+                final detail = await ApiClient().reopenReport(
+                  reportId: apiId,
+                  reason: 'O problema continua após o atendimento.',
+                );
+                ReportStore().upsertFromApi(detail);
+                if (!mounted) return;
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content:
+                        Text('Solicitamos uma nova análise para esse reporte.'),
+                    backgroundColor: ReclameJaColors.secondaryEmerald,
+                  ),
+                );
+              } catch (error) {
+                if (!mounted) return;
+                _showFriendlyError(
+                  'Não foi possível reabrir. Verifique se o prazo para solicitar nova análise ainda está ativo.',
+                );
+              }
             },
             child: const Text('Reabrir chamado'),
           ),
@@ -142,23 +214,27 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  void _nudgeReport() {
-    // Cobrar novamente (Nudge)
-    final event = ReportEvent(
-      title: 'Notificação de Cobrança',
-      time: '16/11 às 17:05',
-      desc: 'Cidadão cobrou um posicionamento atualizado do órgão devido ao atraso no cronograma de resolução previsto.',
-      actor: 'Marina (Você)',
-    );
-    
-    ReportStore().updateReportStatus(_report.id, _report.status, event);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Notificação de cobrança enviada ao órgão de destino!'),
-        backgroundColor: ReclameJaColors.secondaryEmerald,
-      ),
-    );
+  Future<void> _nudgeReport() async {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showFriendlyError('Essa opção estará disponível após o envio.');
+      return;
+    }
+    try {
+      await ApiClient().nudgeReport(apiId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seu pedido de atualização foi enviado.'),
+          backgroundColor: ReclameJaColors.secondaryEmerald,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showFriendlyError(
+        'Não foi possível enviar o pedido agora. Ele pode não estar atrasado ou o limite de solicitações foi atingido.',
+      );
+    }
   }
 
   @override
@@ -178,7 +254,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             icon: const Icon(Icons.notifications_none),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Nenhuma notificação nova para este chamado.')),
+                const SnackBar(
+                    content:
+                        Text('Nenhuma notificação nova para este chamado.')),
               );
             },
           ),
@@ -224,14 +302,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: _report.status == 'Resolvido' 
+                            color: _report.status == 'Resolvido'
                                 ? ReclameJaColors.greenContainer
                                 : ReclameJaColors.primaryYellow,
                             borderRadius: BorderRadius.circular(999),
                             boxShadow: const [
-                              BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                              BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2)),
                             ],
                           ),
                           child: Row(
@@ -240,8 +322,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: _report.status == 'Resolvido' 
-                                      ? ReclameJaColors.secondaryEmerald 
+                                  color: _report.status == 'Resolvido'
+                                      ? ReclameJaColors.secondaryEmerald
                                       : ReclameJaColors.textDark,
                                   shape: BoxShape.circle,
                                 ),
@@ -250,8 +332,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                               Text(
                                 _report.status.toUpperCase(),
                                 style: textTheme.labelSmall?.copyWith(
-                                  color: _report.status == 'Resolvido' 
-                                      ? ReclameJaColors.onGreenContainer 
+                                  color: _report.status == 'Resolvido'
+                                      ? ReclameJaColors.onGreenContainer
                                       : ReclameJaColors.textDark,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 0.5,
@@ -263,14 +345,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         // Draft Indicator if offline
                         if (_report.isOffline)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: ReclameJaColors.alertRed,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
                               'Draft Local',
-                              style: textTheme.labelSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: textTheme.labelSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ),
                       ],
@@ -281,25 +366,32 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.65),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.construction, color: ReclameJaColors.primaryYellow, size: 14),
+                              const Icon(Icons.construction,
+                                  color: ReclameJaColors.primaryYellow,
+                                  size: 14),
                               const SizedBox(width: 6),
                               Text(
                                 '${_report.category} • ${_report.subcategory}',
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600),
                               ),
                             ],
                           ),
                         ),
                         Text(
                           _report.imageUrl != null ? '1 foto' : 'Sem foto',
-                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 11),
                         ),
                       ],
                     ),
@@ -315,20 +407,26 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               children: [
                 Text(
                   _report.title,
-                  style: textTheme.displayMedium?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: textTheme.displayMedium
+                      ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.location_on, color: ReclameJaColors.secondaryEmerald, size: 20),
+                    const Icon(Icons.location_on,
+                        color: ReclameJaColors.secondaryEmerald, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_report.location, style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
-                          Text(_report.details, style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted)),
+                          Text(_report.location,
+                              style: textTheme.bodyLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(_report.details,
+                              style: textTheme.bodySmall
+                                  ?.copyWith(color: ReclameJaColors.textMuted)),
                         ],
                       ),
                     ),
@@ -346,11 +444,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     padding: const EdgeInsets.only(left: 28.0),
                     child: Row(
                       children: [
-                        const Icon(Icons.map, size: 14, color: ReclameJaColors.tertiaryBlue),
+                        const Icon(Icons.map,
+                            size: 14, color: ReclameJaColors.tertiaryBlue),
                         const SizedBox(width: 4),
                         Text(
-                          _isMapVisible ? 'Esconder mapa detalhado' : 'Ver mapa detalhado',
-                          style: textTheme.labelMedium?.copyWith(color: ReclameJaColors.tertiaryBlue, fontWeight: FontWeight.bold),
+                          _isMapVisible
+                              ? 'Esconder mapa detalhado'
+                              : 'Ver mapa detalhado',
+                          style: textTheme.labelMedium?.copyWith(
+                              color: ReclameJaColors.tertiaryBlue,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -364,7 +467,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       borderRadius: BorderRadius.circular(12),
                       color: ReclameJaColors.surfaceLow,
                       image: const DecorationImage(
-                        image: NetworkImage('https://lh3.googleusercontent.com/aida-public/AB6AXuAteX67nFZrT7fEmVMHwiRPnpQlxUg1QjzJ4ZuW_EeivJSZmDQGw2_XCp3841SGDhksCrogHwdGhQt3wVBOaa5rhC7YMzqUOYYyp4IwBEdbMH2IxrMGhxCi-8sYCvuqlrUJaEtJvHrJIWpcTivi-1-7tpOIs7VbWAz31DZD9MkQKoqmuU8av2kKMP7oEEb10GvFz4l4prL77Ojjs6qCrPIB9ZTYwCH_TLVjJYRlPS_b'),
+                        image: NetworkImage(
+                            'https://lh3.googleusercontent.com/aida-public/AB6AXuAteX67nFZrT7fEmVMHwiRPnpQlxUg1QjzJ4ZuW_EeivJSZmDQGw2_XCp3841SGDhksCrogHwdGhQt3wVBOaa5rhC7YMzqUOYYyp4IwBEdbMH2IxrMGhxCi-8sYCvuqlrUJaEtJvHrJIWpcTivi-1-7tpOIs7VbWAz31DZD9MkQKoqmuU8av2kKMP7oEEb10GvFz4l4prL77Ojjs6qCrPIB9ZTYwCH_TLVjJYRlPS_b'),
                         fit: BoxFit.cover,
                       ),
                     ),
@@ -387,7 +491,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Protocolo Oficial', style: textTheme.labelSmall?.copyWith(color: ReclameJaColors.textMuted)),
+                      Text('Protocolo Oficial',
+                          style: textTheme.labelSmall
+                              ?.copyWith(color: ReclameJaColors.textMuted)),
                       const SizedBox(height: 2),
                       Text(
                         _report.id,
@@ -404,13 +510,17 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     style: OutlinedButton.styleFrom(
                       backgroundColor: ReclameJaColors.surfaceBright,
                       foregroundColor: ReclameJaColors.secondaryEmerald,
-                      side: const BorderSide(color: ReclameJaColors.borderSlate),
+                      side:
+                          const BorderSide(color: ReclameJaColors.borderSlate),
                       minimumSize: const Size(100, 40),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: _copyProtocolToClipboard,
                     icon: const Icon(Icons.content_copy, size: 14),
-                    label: const Text('Copiar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    label: const Text('Copiar',
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -433,7 +543,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       color: Color(0xFF16A34A),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.calendar_month, color: Colors.white, size: 20),
+                    child: const Icon(Icons.calendar_month,
+                        color: Colors.white, size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -477,34 +588,43 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Rastreamento do Chamado', style: textTheme.titleMedium),
+                      Text('Rastreamento do Chamado',
+                          style: textTheme.titleMedium),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           '${_report.timeline.length} etapas',
-                          style: textTheme.labelSmall?.copyWith(color: const Color(0xFF16A34A), fontWeight: FontWeight.bold),
+                          style: textTheme.labelSmall?.copyWith(
+                              color: const Color(0xFF16A34A),
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Vertical stepped path rendering dynamically from timeline list
                   ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _report.timeline.length + (_report.status == 'Resolvido' ? 0 : 1),
+                    itemCount: _report.timeline.length +
+                        (_report.status == 'Resolvido' ? 0 : 1),
                     itemBuilder: (context, index) {
                       final isTimelineEvent = index < _report.timeline.length;
-                      final isLast = index == _report.timeline.length + (_report.status == 'Resolvido' ? 0 : 1) - 1;
+                      final isLast = index ==
+                          _report.timeline.length +
+                              (_report.status == 'Resolvido' ? 0 : 1) -
+                              1;
 
                       if (isTimelineEvent) {
                         final event = _report.timeline[index];
-                        final isActiveStep = index == _report.timeline.length - 1;
+                        final isActiveStep =
+                            index == _report.timeline.length - 1;
 
                         return IntrinsicHeight(
                           child: Row(
@@ -516,19 +636,25 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                     width: 24,
                                     height: 24,
                                     decoration: BoxDecoration(
-                                      color: isActiveStep 
+                                      color: isActiveStep
                                           ? ReclameJaColors.primaryYellow
                                           : const Color(0xFF16A34A),
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: isActiveStep ? Colors.orange : const Color(0xFF86EFAC),
+                                        color: isActiveStep
+                                            ? Colors.orange
+                                            : const Color(0xFF86EFAC),
                                         width: isActiveStep ? 2 : 1,
                                       ),
                                     ),
                                     child: Icon(
-                                      isActiveStep ? Icons.trending_up : Icons.check,
+                                      isActiveStep
+                                          ? Icons.trending_up
+                                          : Icons.check,
                                       size: 14,
-                                      color: isActiveStep ? ReclameJaColors.textDark : Colors.white,
+                                      color: isActiveStep
+                                          ? ReclameJaColors.textDark
+                                          : Colors.white,
                                     ),
                                   ),
                                   if (!isLast)
@@ -549,47 +675,91 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFFEFDF0),
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: ReclameJaColors.primaryYellow),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            border: Border.all(
+                                                color: ReclameJaColors
+                                                    .primaryYellow),
                                           ),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
                                                 children: [
                                                   Text(
                                                     '${index + 1}. ${event.title}',
-                                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF451A03)),
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13,
+                                                        color:
+                                                            Color(0xFF451A03)),
                                                   ),
-                                                  Text(event.time, style: const TextStyle(fontSize: 10, color: Color(0xFF78350F))),
+                                                  Text(event.time,
+                                                      style: const TextStyle(
+                                                          fontSize: 10,
+                                                          color: Color(
+                                                              0xFF78350F))),
                                                 ],
                                               ),
                                               const SizedBox(height: 4),
-                                              Text(event.desc, style: const TextStyle(fontSize: 12, color: Color(0xFF78350F), height: 1.3)),
+                                              Text(event.desc,
+                                                  style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: Color(0xFF78350F),
+                                                      height: 1.3)),
                                               const SizedBox(height: 6),
                                               Row(
                                                 children: [
-                                                  const Icon(Icons.badge, size: 12, color: Color(0xFF9A3412)),
+                                                  const Icon(Icons.badge,
+                                                      size: 12,
+                                                      color: Color(0xFF9A3412)),
                                                   const SizedBox(width: 4),
-                                                  Text('Responsável: ${event.actor}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF9A3412))),
+                                                  Text(
+                                                      'Responsável: ${event.actor}',
+                                                      style: const TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Color(
+                                                              0xFF9A3412))),
                                                 ],
                                               ),
                                             ],
                                           ),
                                         )
                                       : Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Row(
                                               children: [
-                                                Text('${index + 1}. ${event.title}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                                Text(
+                                                    '${index + 1}. ${event.title}',
+                                                    style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 13)),
                                                 const SizedBox(width: 8),
-                                                Text(event.time, style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted)),
+                                                Text(event.time,
+                                                    style: textTheme.bodySmall
+                                                        ?.copyWith(
+                                                            color:
+                                                                ReclameJaColors
+                                                                    .textMuted)),
                                               ],
                                             ),
                                             const SizedBox(height: 2),
-                                            Text(event.desc, style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted, height: 1.3)),
+                                            Text(event.desc,
+                                                style: textTheme.bodySmall
+                                                    ?.copyWith(
+                                                        color: ReclameJaColors
+                                                            .textMuted,
+                                                        height: 1.3)),
                                           ],
                                         ),
                                 ),
@@ -612,7 +782,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                       color: ReclameJaColors.surfaceLow,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.hourglass_empty, size: 12, color: ReclameJaColors.textMuted),
+                                    child: const Icon(Icons.hourglass_empty,
+                                        size: 12,
+                                        color: ReclameJaColors.textMuted),
                                   ),
                                 ],
                               ),
@@ -621,16 +793,19 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.only(top: 4.0),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         '${_report.timeline.length + 1}. Resolvido',
-                                        style: textTheme.labelLarge?.copyWith(color: ReclameJaColors.textMuted),
+                                        style: textTheme.labelLarge?.copyWith(
+                                            color: ReclameJaColors.textMuted),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
                                         'Recapeamento definitivo e envio de foto oficial de homologação.',
-                                        style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                                        style: textTheme.bodySmall?.copyWith(
+                                            color: ReclameJaColors.textMuted),
                                       ),
                                     ],
                                   ),
@@ -677,14 +852,45 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             height: 24,
                             child: Stack(
                               children: [
-                                Positioned(left: 0, child: CircleAvatar(radius: 12, backgroundColor: Colors.blue, child: Text('JS', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
-                                Positioned(left: 18, child: CircleAvatar(radius: 12, backgroundColor: Colors.green, child: Text('MC', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
-                                Positioned(left: 36, child: CircleAvatar(radius: 12, backgroundColor: Colors.amber, child: Text('RL', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)))),
+                                Positioned(
+                                    left: 0,
+                                    child: CircleAvatar(
+                                        radius: 12,
+                                        backgroundColor: Colors.blue,
+                                        child: Text('JS',
+                                            style: TextStyle(
+                                                fontSize: 8,
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold)))),
+                                Positioned(
+                                    left: 18,
+                                    child: CircleAvatar(
+                                        radius: 12,
+                                        backgroundColor: Colors.green,
+                                        child: Text('MC',
+                                            style: TextStyle(
+                                                fontSize: 8,
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold)))),
+                                Positioned(
+                                    left: 36,
+                                    child: CircleAvatar(
+                                        radius: 12,
+                                        backgroundColor: Colors.amber,
+                                        child: Text('RL',
+                                            style: TextStyle(
+                                                fontSize: 8,
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold)))),
                               ],
                             ),
                           ),
                           SizedBox(width: 4),
-                          Text('+12', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ReclameJaColors.textMuted)),
+                          Text('+12',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: ReclameJaColors.textMuted)),
                         ],
                       ),
                     ],
@@ -706,7 +912,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       Expanded(
                         child: Text(
                           'moradores confirmaram este problema',
-                          style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                          style: textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -714,24 +921,29 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   const SizedBox(height: 6),
                   Text(
                     'Cada confirmação valida o impacto e eleva o nível de prioridade no despacho das frentes de trabalho municipais.',
-                    style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted, height: 1.3),
+                    style: textTheme.bodySmall?.copyWith(
+                        color: ReclameJaColors.textMuted, height: 1.3),
                   ),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _report.isUserConfirmed 
-                          ? ReclameJaColors.secondaryEmerald 
+                      backgroundColor: _report.isUserConfirmed
+                          ? ReclameJaColors.secondaryEmerald
                           : ReclameJaColors.primaryYellow,
-                      foregroundColor: _report.isUserConfirmed 
-                          ? Colors.white 
+                      foregroundColor: _report.isUserConfirmed
+                          ? Colors.white
                           : ReclameJaColors.textDark,
                       minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: _toggleSupport,
-                    icon: Icon(_report.isUserConfirmed ? Icons.check : Icons.thumb_up),
+                    icon: Icon(
+                        _report.isUserConfirmed ? Icons.check : Icons.thumb_up),
                     label: Text(
-                      _report.isUserConfirmed ? 'Você confirmou este problema' : 'Eu também vi isso (+1)',
+                      _report.isUserConfirmed
+                          ? 'Você confirmou este problema'
+                          : 'Eu também vi isso (+1)',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -754,39 +966,48 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Comentários e atualizações', style: textTheme.titleMedium),
+                      Text('Comentários e atualizações',
+                          style: textTheme.titleMedium),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           '${_report.comments.length}',
-                          style: textTheme.labelSmall?.copyWith(color: const Color(0xFF16A34A), fontWeight: FontWeight.bold),
+                          style: textTheme.labelSmall?.copyWith(
+                              color: const Color(0xFF16A34A),
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Comments List
                   ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _report.comments.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 10),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final c = _report.comments[index];
                       final isOfficial = c['isOfficial'] == 'true';
-                      
+
                       return Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isOfficial ? const Color(0xFFF0FDF4) : ReclameJaColors.surfaceLow,
+                          color: isOfficial
+                              ? const Color(0xFFF0FDF4)
+                              : ReclameJaColors.surfaceLow,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: isOfficial ? const Color(0xFF86EFAC) : Colors.transparent,
+                            color: isOfficial
+                                ? const Color(0xFF86EFAC)
+                                : Colors.transparent,
                           ),
                         ),
                         child: Column(
@@ -802,18 +1023,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
-                                        color: isOfficial ? const Color(0xFF15803D) : ReclameJaColors.textDark,
+                                        color: isOfficial
+                                            ? const Color(0xFF15803D)
+                                            : ReclameJaColors.textDark,
                                       ),
                                     ),
                                     if (isOfficial) ...[
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.verified, color: Color(0xFF16A34A), size: 14),
+                                      const Icon(Icons.verified,
+                                          color: Color(0xFF16A34A), size: 14),
                                     ],
                                   ],
                                 ),
                                 Text(
                                   c['time']!,
-                                  style: const TextStyle(fontSize: 10, color: ReclameJaColors.textMuted),
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      color: ReclameJaColors.textMuted),
                                 ),
                               ],
                             ),
@@ -830,7 +1056,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   const SizedBox(height: 16),
 
                   // Add note trigger
-                  Text('Adicionar nota comunitária ou detalhe', style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('Adicionar nota comunitária ou detalhe',
+                      style: textTheme.labelMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -838,23 +1066,29 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         child: TextField(
                           controller: _commentController,
                           decoration: const InputDecoration(
-                            hintText: "Ex.: 'A água da chuva cobriu o buraco'...",
-                            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            hintText:
+                                "Ex.: 'A água da chuva cobriu o buraco'...",
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       // Camera complement
                       IconButton(
-                        icon: const Icon(Icons.add_a_photo, color: ReclameJaColors.textMuted),
+                        icon: const Icon(Icons.add_a_photo,
+                            color: ReclameJaColors.textMuted),
                         onPressed: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Selecione uma imagem complementar.')),
+                            const SnackBar(
+                                content:
+                                    Text('Selecione uma imagem complementar.')),
                           );
                         },
                       ),
                       IconButton(
-                        icon: const Icon(Icons.send, color: ReclameJaColors.secondaryEmerald),
+                        icon: const Icon(Icons.send,
+                            color: ReclameJaColors.secondaryEmerald),
                         onPressed: _addComment,
                       ),
                     ],
@@ -873,56 +1107,67 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     backgroundColor: ReclameJaColors.primaryYellow,
                     foregroundColor: ReclameJaColors.textDark,
                     minimumSize: const Size.fromHeight(52),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Link do chamado ${_report.id} copiado para compartilhamento!'),
+                        content: Text(
+                            'Link do chamado ${_report.id} copiado para compartilhamento!'),
                         backgroundColor: ReclameJaColors.secondaryEmerald,
                       ),
                     );
                   },
                   icon: const Icon(Icons.share, size: 18),
-                  label: const Text('Compartilhar com vizinhos', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text('Compartilhar com vizinhos',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 10),
-                
+
                 // Reopen / Cobrar Novamente conditional controls
                 if (_report.status == 'Resolvido') ...[
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ReclameJaColors.secondaryEmerald,
-                      side: const BorderSide(color: ReclameJaColors.secondaryEmerald),
+                      side: const BorderSide(
+                          color: ReclameJaColors.secondaryEmerald),
                       minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: _reopenReport,
                     icon: const Icon(Icons.replay),
-                    label: const Text('Reabrir chamado', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Reabrir chamado',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 4),
                   const Text(
                     'Ação disponível caso o problema persista após a conclusão oficial.',
-                    style: TextStyle(fontSize: 10, color: ReclameJaColors.textMuted),
+                    style: TextStyle(
+                        fontSize: 10, color: ReclameJaColors.textMuted),
                     textAlign: TextAlign.center,
                   ),
                 ] else ...[
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ReclameJaColors.textDark,
-                      side: const BorderSide(color: ReclameJaColors.borderSlate),
+                      side:
+                          const BorderSide(color: ReclameJaColors.borderSlate),
                       minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: _nudgeReport,
                     icon: const Icon(Icons.campaign),
-                    label: const Text('Cobrar novamente', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('Cobrar novamente',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 4),
                   const Text(
                     'Envia uma nova notificação de cobrança direta para agilizar a vistoria do órgão.',
-                    style: TextStyle(fontSize: 10, color: ReclameJaColors.textMuted),
+                    style: TextStyle(
+                        fontSize: 10, color: ReclameJaColors.textMuted),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -933,25 +1178,39 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     TextButton.icon(
-                      style: TextButton.styleFrom(foregroundColor: ReclameJaColors.textMuted),
+                      style: TextButton.styleFrom(
+                          foregroundColor: ReclameJaColors.textMuted),
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Encaminhando à Ouvidoria Geral...')),
+                          const SnackBar(
+                              content:
+                                  Text('Encaminhando à Ouvidoria Geral...')),
                         );
                       },
-                      icon: const Icon(Icons.contact_support_outlined, size: 16),
-                      label: const Text('Falar com Ouvidoria', style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
+                      icon:
+                          const Icon(Icons.contact_support_outlined, size: 16),
+                      label: const Text('Falar com Ouvidoria',
+                          style: TextStyle(
+                              fontSize: 12,
+                              decoration: TextDecoration.underline)),
                     ),
-                    const Text('•', style: TextStyle(color: ReclameJaColors.surfaceDim)),
+                    const Text('•',
+                        style: TextStyle(color: ReclameJaColors.surfaceDim)),
                     TextButton.icon(
-                      style: TextButton.styleFrom(foregroundColor: ReclameJaColors.alertRed),
+                      style: TextButton.styleFrom(
+                          foregroundColor: ReclameJaColors.alertRed),
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Abuso reportado para auditoria da equipe do Voz Cidadã.')),
+                          const SnackBar(
+                              content: Text(
+                                  'Abuso reportado para auditoria da equipe do Voz Cidadã.')),
                         );
                       },
                       icon: const Icon(Icons.flag_outlined, size: 16),
-                      label: const Text('Relatar inconsistência', style: TextStyle(fontSize: 12, decoration: TextDecoration.underline)),
+                      label: const Text('Relatar inconsistência',
+                          style: TextStyle(
+                              fontSize: 12,
+                              decoration: TextDecoration.underline)),
                     ),
                   ],
                 ),

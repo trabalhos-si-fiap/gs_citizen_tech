@@ -1,6 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../app_theme.dart';
+import '../../services/api_client.dart';
+import '../../services/push_service.dart';
+import '../../services/session_store.dart';
 import '../welcome_screen.dart';
 
 class ProfileTab extends StatelessWidget {
@@ -13,92 +19,96 @@ class ProfileTab extends StatelessWidget {
     required this.userName,
   });
 
-  void _exportDataAsJson(BuildContext context) {
-    // Generate beautiful mock JSON as described in D40/D41
-    const mockJson = '''
-{
-  "usuario": {
-    "nome": "Marina Silva",
-    "email": "marina.silva@provedor.com",
-    "idade": 28,
-    "consentimento": {
-      "versao": "v1.0.2",
-      "data_aceite": "2026-11-16T15:30:00Z"
+  Future<void> _exportDataAsJson(BuildContext context) async {
+    if (SessionStore.accessToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Faça login para exportar os dados reais pela API.'),
+        ),
+      );
+      return;
     }
-  },
-  "reportes_vinculados": [
-    {
-      "protocolo": "#CV-2023-8941",
-      "data_criacao": "2026-10-18T09:14:00Z",
-      "categoria": "Risco Urbano",
-      "subcategoria": "Pavimentação",
-      "local": "Rua das Palmeiras, 340",
-      "status": "Em andamento"
-    }
-  ]
-}
-''';
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.download, color: ReclameJaColors.secondaryEmerald),
-            const SizedBox(width: 8),
-            Text('Exportar Dados (LGPD)', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Seus dados pessoais e histórico de chamados foram compilados em um arquivo estruturado JSON de acordo com a LGPD.',
-              style: TextStyle(fontSize: 12, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 160),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: ReclameJaColors.surfaceLow,
-                borderRadius: BorderRadius.circular(8),
+    try {
+      final data = await ApiClient().exportMyData();
+      final jsonText = const JsonEncoder.withIndent('  ').convert(data);
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.download,
+                  color: ReclameJaColors.secondaryEmerald),
+              const SizedBox(width: 8),
+              Text('Exportar Dados (LGPD)',
+                  style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Seus dados pessoais e histórico de chamados foram compilados em um arquivo estruturado JSON de acordo com a LGPD.',
+                style: TextStyle(fontSize: 12, height: 1.4),
               ),
-              child: SingleChildScrollView(
-                child: Text(
-                  mockJson,
-                  style: GoogleFonts.jetBrainsMono(fontSize: 10, color: ReclameJaColors.textDark),
+              const SizedBox(height: 12),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 160),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ReclameJaColors.surfaceLow,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    jsonText,
+                    style: GoogleFonts.jetBrainsMono(
+                        fontSize: 10, color: ReclameJaColors.textDark),
+                  ),
                 ),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: jsonText));
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                messenger.showSnackBar(
+                  const SnackBar(
+                      content:
+                          Text('JSON copiado para a área de transferência.')),
+                );
+              },
+              child: const Text('Fechar',
+                  style: TextStyle(color: ReclameJaColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ReclameJaColors.secondaryEmerald,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(100, 40),
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Copiar JSON'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar', style: TextStyle(color: ReclameJaColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ReclameJaColors.secondaryEmerald,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(100, 40),
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('JSON copiado! Arquivo de portabilidade de dados exportado com sucesso.'),
-                  backgroundColor: ReclameJaColors.secondaryEmerald,
-                ),
-              );
-            },
-            child: const Text('Copiar JSON'),
-          ),
-        ],
-      ),
-    );
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString()),
+          backgroundColor: ReclameJaColors.alertRed,
+        ),
+      );
+    }
   }
 
   void _confirmAccountDeletion(BuildContext context) {
@@ -109,7 +119,9 @@ class ProfileTab extends StatelessWidget {
           children: [
             const Icon(Icons.warning, color: ReclameJaColors.alertRed),
             const SizedBox(width: 8),
-            Text('Excluir Conta?', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text('Excluir Conta?',
+                style: GoogleFonts.spaceGrotesk(
+                    fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
         content: const Text(
@@ -119,25 +131,50 @@ class ProfileTab extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar', style: TextStyle(color: ReclameJaColors.textMuted, fontWeight: FontWeight.bold)),
+            child: const Text('Cancelar',
+                style: TextStyle(
+                    color: ReclameJaColors.textMuted,
+                    fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ReclameJaColors.alertRed,
               foregroundColor: Colors.white,
             ),
-            onPressed: () {
-              Navigator.pop(context); // close dialog
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Conta excluída com sucesso de acordo com as normas da LGPD.'),
-                  backgroundColor: ReclameJaColors.alertRed,
-                ),
-              );
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-              );
+            onPressed: () async {
+              Navigator.pop(context);
+              if (SessionStore.accessToken == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Faça login para excluir a conta pela API.'),
+                  ),
+                );
+                return;
+              }
+              try {
+                await PushService.removeCurrentDevice();
+                await ApiClient().deleteAccount();
+                await SessionStore.clear();
+                await PushService.dispose();
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Conta excluída com sucesso de acordo com a LGPD.'),
+                    backgroundColor: ReclameJaColors.alertRed,
+                  ),
+                );
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const WelcomeScreen()),
+                );
+              } catch (error) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(error.toString())),
+                );
+              }
             },
             child: const Text('Confirmar exclusão'),
           ),
@@ -150,20 +187,40 @@ class ProfileTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Sair do Aplicativo', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
-        content: const Text('Deseja realmente desconectar e encerrar sua sessão ativa no Voz Cidadã?'),
+        title: Text('Sair do Aplicativo',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        content: const Text(
+            'Deseja realmente desconectar e encerrar sua sessão ativa no Voz Cidadã?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Permanecer', style: TextStyle(color: ReclameJaColors.textMuted)),
+            child: const Text('Permanecer',
+                style: TextStyle(color: ReclameJaColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ReclameJaColors.primaryYellow,
               foregroundColor: ReclameJaColors.textDark,
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
+              try {
+                await PushService.removeCurrentDevice();
+              } catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Não foi possível remover o dispositivo das notificações. Confira sua conexão.',
+                      ),
+                      backgroundColor: ReclameJaColors.alertRed,
+                    ),
+                  );
+                }
+              }
+              await SessionStore.clear();
+              await PushService.dispose();
+              if (!context.mounted) return;
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const WelcomeScreen()),
@@ -209,7 +266,10 @@ class ProfileTab extends StatelessWidget {
                     backgroundColor: ReclameJaColors.primaryYellow,
                     child: Text(
                       'MS',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: ReclameJaColors.textDark),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                          color: ReclameJaColors.textDark),
                     ),
                   ),
                   const SizedBox(width: 16),
@@ -218,24 +278,30 @@ class ProfileTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          userName == 'Marina' ? 'Marina Silva' : userName,
-                          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                          userName,
+                          style: textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'marina.silva@provedor.com',
-                          style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                          SessionStore.accountEmail ?? '',
+                          style: textTheme.bodySmall
+                              ?.copyWith(color: ReclameJaColors.textMuted),
                         ),
                         const SizedBox(height: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             'Consentimento Ativo: v1.0.2',
-                            style: GoogleFonts.jetBrainsMono(fontSize: 10, color: ReclameJaColors.textMuted, fontWeight: FontWeight.bold),
+                            style: GoogleFonts.jetBrainsMono(
+                                fontSize: 10,
+                                color: ReclameJaColors.textMuted,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -247,7 +313,9 @@ class ProfileTab extends StatelessWidget {
             const SizedBox(height: 24),
 
             // Settings Categories
-            Text('LGPD & Privacidade', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text('LGPD & Privacidade',
+                style: textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Material(
               color: ReclameJaColors.surfaceBright,
@@ -262,18 +330,31 @@ class ProfileTab extends StatelessWidget {
                   child: Column(
                     children: [
                       ListTile(
-                        leading: const Icon(Icons.download, color: ReclameJaColors.secondaryEmerald),
-                        title: const Text('Exportar meus dados', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                        subtitle: const Text('Portabilidade de informações em formato JSON', style: TextStyle(fontSize: 11)),
+                        leading: const Icon(Icons.download,
+                            color: ReclameJaColors.secondaryEmerald),
+                        title: const Text('Exportar meus dados',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold)),
+                        subtitle: const Text(
+                            'Portabilidade de informações em formato JSON',
+                            style: TextStyle(fontSize: 11)),
                         trailing: const Icon(Icons.chevron_right, size: 16),
                         onTap: () => _exportDataAsJson(context),
                       ),
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       ListTile(
-                        leading: const Icon(Icons.delete_forever, color: ReclameJaColors.alertRed),
-                        title: const Text('Excluir minha conta', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ReclameJaColors.alertRed)),
-                        subtitle: const Text('Apagar dados pessoais sob as regras da LGPD', style: TextStyle(fontSize: 11)),
-                        trailing: const Icon(Icons.chevron_right, size: 16, color: ReclameJaColors.alertRed),
+                        leading: const Icon(Icons.delete_forever,
+                            color: ReclameJaColors.alertRed),
+                        title: const Text('Excluir minha conta',
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: ReclameJaColors.alertRed)),
+                        subtitle: const Text(
+                            'Apagar dados pessoais sob as regras da LGPD',
+                            style: TextStyle(fontSize: 11)),
+                        trailing: const Icon(Icons.chevron_right,
+                            size: 16, color: ReclameJaColors.alertRed),
                         onTap: () => _confirmAccountDeletion(context),
                       ),
                     ],
@@ -283,7 +364,9 @@ class ProfileTab extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            Text('Termos Legais', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text('Termos Legais',
+                style: textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Material(
               color: ReclameJaColors.surfaceBright,
@@ -298,20 +381,28 @@ class ProfileTab extends StatelessWidget {
                   child: Column(
                     children: [
                       ListTile(
-                        leading: const Icon(Icons.description_outlined, color: ReclameJaColors.textDark),
-                        title: const Text('Termos de Uso', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        leading: const Icon(Icons.description_outlined,
+                            color: ReclameJaColors.textDark),
+                        title: const Text('Termos de Uso',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold)),
                         trailing: const Icon(Icons.chevron_right, size: 16),
                         onTap: () {
-                          _showDialog(context, 'Termos de Uso', 'Termos de Uso oficiais do Voz Cidadã. Comprometimento mútuo para melhorias na infraestrutura e transparência na zeladoria pública.');
+                          _showDialog(context, 'Termos de Uso',
+                              'Termos de Uso oficiais do Voz Cidadã. Comprometimento mútuo para melhorias na infraestrutura e transparência na zeladoria pública.');
                         },
                       ),
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       ListTile(
-                        leading: const Icon(Icons.lock_outline, color: ReclameJaColors.textDark),
-                        title: const Text('Política de Privacidade', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                        leading: const Icon(Icons.lock_outline,
+                            color: ReclameJaColors.textDark),
+                        title: const Text('Política de Privacidade',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold)),
                         trailing: const Icon(Icons.chevron_right, size: 16),
                         onTap: () {
-                          _showDialog(context, 'Política de Privacidade', 'Política de Privacidade regulamentada pela LGPD (Lei 13.709/18). Seus dados pessoais estão criptografados e seguros.');
+                          _showDialog(context, 'Política de Privacidade',
+                              'Política de Privacidade regulamentada pela LGPD (Lei 13.709/18). Seus dados pessoais estão criptografados e seguros.');
                         },
                       ),
                     ],
@@ -325,19 +416,23 @@ class ProfileTab extends StatelessWidget {
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: ReclameJaColors.alertRed,
-                side: const BorderSide(color: ReclameJaColors.alertRed, width: 1.2),
+                side: const BorderSide(
+                    color: ReclameJaColors.alertRed, width: 1.2),
                 minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
               ),
               onPressed: () => _signOut(context),
               icon: const Icon(Icons.exit_to_app),
-              label: const Text('Sair do Aplicativo', style: TextStyle(fontWeight: FontWeight.bold)),
+              label: const Text('Sair do Aplicativo',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 12),
             const Center(
               child: Text(
                 'Voz Cidadã v1.0.0 • Made with IBM Bob',
-                style: TextStyle(fontSize: 11, color: ReclameJaColors.textMuted),
+                style:
+                    TextStyle(fontSize: 11, color: ReclameJaColors.textMuted),
               ),
             ),
           ],
@@ -366,18 +461,21 @@ class ProfileTab extends StatelessWidget {
                   color: ReclameJaColors.surfaceLow,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.account_circle_outlined, size: 64, color: ReclameJaColors.textMuted),
+                child: const Icon(Icons.account_circle_outlined,
+                    size: 64, color: ReclameJaColors.textMuted),
               ),
               const SizedBox(height: 24),
               Text(
                 'Sua conta, sua Voz',
-                style: textTheme.headlineMedium?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                style: textTheme.headlineMedium
+                    ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
                 'Você está navegando como visitante e seus dados não estão sendo salvos. Crie um perfil auditável para arquivar com segurança seus chamados de zeladoria, cobrar prazos e exportar relatórios pela LGPD.',
-                style: textTheme.bodyMedium?.copyWith(color: ReclameJaColors.textMuted, height: 1.4),
+                style: textTheme.bodyMedium
+                    ?.copyWith(color: ReclameJaColors.textMuted, height: 1.4),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
@@ -386,15 +484,18 @@ class ProfileTab extends StatelessWidget {
                   backgroundColor: ReclameJaColors.primaryYellow,
                   foregroundColor: ReclameJaColors.textDark,
                   minimumSize: const Size.fromHeight(52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                 ),
                 onPressed: () {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const WelcomeScreen()),
                   );
                 },
-                child: const Text('Fazer Login ou Criar Perfil', style: TextStyle(fontWeight: FontWeight.bold)),
+                child: const Text('Fazer Login ou Criar Perfil',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -407,12 +508,14 @@ class ProfileTab extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(title, style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        title: Text(title,
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
         content: Text(content, style: GoogleFonts.hankenGrotesk()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar', style: TextStyle(color: ReclameJaColors.secondaryEmerald)),
+            child: const Text('Fechar',
+                style: TextStyle(color: ReclameJaColors.secondaryEmerald)),
           ),
         ],
       ),

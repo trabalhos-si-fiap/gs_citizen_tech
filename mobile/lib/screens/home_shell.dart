@@ -147,22 +147,26 @@ class _HomeShellState extends State<HomeShell> {
             ),
             NavigationDestination(
               icon: Icon(Icons.assignment_outlined),
-              selectedIcon: Icon(Icons.assignment, color: ReclameJaColors.textDark),
+              selectedIcon:
+                  Icon(Icons.assignment, color: ReclameJaColors.textDark),
               label: 'Reportes',
             ),
             NavigationDestination(
               icon: Icon(Icons.dynamic_feed_outlined),
-              selectedIcon: Icon(Icons.dynamic_feed, color: ReclameJaColors.textDark),
+              selectedIcon:
+                  Icon(Icons.dynamic_feed, color: ReclameJaColors.textDark),
               label: 'Feed',
             ),
             NavigationDestination(
               icon: Icon(Icons.analytics_outlined),
-              selectedIcon: Icon(Icons.analytics, color: ReclameJaColors.textDark),
+              selectedIcon:
+                  Icon(Icons.analytics, color: ReclameJaColors.textDark),
               label: 'Região',
             ),
             NavigationDestination(
               icon: Icon(Icons.account_circle_outlined),
-              selectedIcon: Icon(Icons.account_circle, color: ReclameJaColors.textDark),
+              selectedIcon:
+                  Icon(Icons.account_circle, color: ReclameJaColors.textDark),
               label: 'Perfil',
             ),
           ],

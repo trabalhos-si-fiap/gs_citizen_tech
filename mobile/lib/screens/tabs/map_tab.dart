@@ -72,12 +72,15 @@ class _MapTabState extends State<MapTab> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Acesso Restrito', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
-        content: const Text('Para registrar problemas urbanos de zeladoria, por favor crie uma conta ou faça login no Reclame Já.'),
+        title: Text('Acesso Restrito',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        content: const Text(
+            'Para registrar problemas urbanos de zeladoria, por favor crie uma conta ou faça login no Reclame Já.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Continuar explorando', style: TextStyle(color: ReclameJaColors.textMuted)),
+            child: const Text('Continuar explorando',
+                style: TextStyle(color: ReclameJaColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -127,7 +130,8 @@ class _MapTabState extends State<MapTab> {
           // 2. Floating Header Box (Top Greeting + Filter Chips)
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -138,7 +142,10 @@ class _MapTabState extends State<MapTab> {
                       color: Colors.white.withValues(alpha: 0.95),
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: const [
-                        BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 3)),
+                        BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 8,
+                            offset: Offset(0, 3)),
                       ],
                     ),
                     child: Row(
@@ -151,10 +158,13 @@ class _MapTabState extends State<MapTab> {
                               children: [
                                 Text(
                                   'Olá, ${widget.userName}',
-                                  style: textTheme.headlineSmall?.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: textTheme.headlineSmall?.copyWith(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(width: 4),
-                                const Text('👋', style: TextStyle(fontSize: 16)),
+                                const Text('👋',
+                                    style: TextStyle(fontSize: 16)),
                               ],
                             ),
                             const SizedBox(height: 2),
@@ -163,12 +173,15 @@ class _MapTabState extends State<MapTab> {
                                 Container(
                                   width: 8,
                                   height: 8,
-                                  decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                                  decoration: const BoxDecoration(
+                                      color: Colors.green,
+                                      shape: BoxShape.circle),
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   'Jardim das Flores, São Paulo',
-                                  style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                                  style: textTheme.bodySmall?.copyWith(
+                                      color: ReclameJaColors.textMuted),
                                 ),
                               ],
                             ),
@@ -178,12 +191,15 @@ class _MapTabState extends State<MapTab> {
                         Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.emergency, color: ReclameJaColors.alertRed),
+                              icon: const Icon(Icons.emergency,
+                                  color: ReclameJaColors.alertRed),
                               tooltip: 'Canais de Emergência',
                               onPressed: () {
                                 Navigator.push(
                                   context,
-                                  MaterialPageRoute(builder: (context) => const EmergencyScreen()),
+                                  MaterialPageRoute(
+                                      builder: (context) =>
+                                          const EmergencyScreen()),
                                 );
                               },
                             ),
@@ -197,13 +213,21 @@ class _MapTabState extends State<MapTab> {
                                     color: ReclameJaColors.surfaceLow,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Icon(Icons.notifications_none, color: ReclameJaColors.textDark, size: 22),
+                                  child: const Icon(Icons.notifications_none,
+                                      color: ReclameJaColors.textDark,
+                                      size: 22),
                                 ),
                                 Container(
                                   margin: const EdgeInsets.only(top: 4),
                                   padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(color: ReclameJaColors.primaryYellow, shape: BoxShape.circle),
-                                  child: const Text('2', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ReclameJaColors.textDark)),
+                                  decoration: const BoxDecoration(
+                                      color: ReclameJaColors.primaryYellow,
+                                      shape: BoxShape.circle),
+                                  child: const Text('2',
+                                      style: TextStyle(
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold,
+                                          color: ReclameJaColors.textDark)),
                                 ),
                               ],
                             ),
@@ -222,11 +246,14 @@ class _MapTabState extends State<MapTab> {
                       children: [
                         _buildFilterChip('Todos', Icons.all_inclusive),
                         const SizedBox(width: 8),
-                        _buildFilterChip('Risco Urbano', Icons.warning, color: Colors.amber.shade700),
+                        _buildFilterChip('Risco Urbano', Icons.warning,
+                            color: Colors.amber.shade700),
                         const SizedBox(width: 8),
-                        _buildFilterChip('Transporte', Icons.directions_bus, color: ReclameJaColors.tertiaryBlue),
+                        _buildFilterChip('Transporte', Icons.directions_bus,
+                            color: ReclameJaColors.tertiaryBlue),
                         const SizedBox(width: 8),
-                        _buildFilterChip('Saúde', Icons.local_hospital, color: ReclameJaColors.alertRed),
+                        _buildFilterChip('Saúde', Icons.local_hospital,
+                            color: ReclameJaColors.alertRed),
                       ],
                     ),
                   ),
@@ -248,7 +275,9 @@ class _MapTabState extends State<MapTab> {
                       _selectedMapReport = null;
                     });
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Centralizado na sua localização atual.')),
+                      const SnackBar(
+                          content:
+                              Text('Centralizado na sua localização atual.')),
                     );
                   },
                 ),
@@ -257,7 +286,9 @@ class _MapTabState extends State<MapTab> {
                   icon: Icons.layers,
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Alternando camadas do OpenStreetMap...')),
+                      const SnackBar(
+                          content:
+                              Text('Alternando camadas do OpenStreetMap...')),
                     );
                   },
                 ),
@@ -308,22 +339,30 @@ class _MapTabState extends State<MapTab> {
   Widget _buildFilterChip(String label, IconData icon, {Color? color}) {
     final isSelected = _activeFilter == label;
     final count = _getCategoryCount(label);
-    
+
     return FilterChip(
       selected: isSelected,
       label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != Icons.all_inclusive) ...[
-            Icon(icon, size: 14, color: isSelected ? ReclameJaColors.textDark : (color ?? ReclameJaColors.textMuted)),
+            Icon(icon,
+                size: 14,
+                color: isSelected
+                    ? ReclameJaColors.textDark
+                    : (color ?? ReclameJaColors.textMuted)),
             const SizedBox(width: 4),
           ],
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(width: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: isSelected ? ReclameJaColors.textDark : ReclameJaColors.surfaceDim,
+              color: isSelected
+                  ? ReclameJaColors.textDark
+                  : ReclameJaColors.surfaceDim,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -331,7 +370,9 @@ class _MapTabState extends State<MapTab> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? ReclameJaColors.primaryYellow : ReclameJaColors.textDark,
+                color: isSelected
+                    ? ReclameJaColors.primaryYellow
+                    : ReclameJaColors.textDark,
               ),
             ),
           ),
@@ -341,7 +382,9 @@ class _MapTabState extends State<MapTab> {
       selectedColor: ReclameJaColors.primaryYellow,
       checkmarkColor: Colors.transparent,
       showCheckmark: false,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: ReclameJaColors.borderSlate)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: ReclameJaColors.borderSlate)),
       onSelected: (val) {
         setState(() {
           _activeFilter = label;
@@ -356,7 +399,7 @@ class _MapTabState extends State<MapTab> {
     // #CV-2023-8941 -> x: 125, y: 195 (Poda / Pavimentação)
     // #CV-2023-5510 -> x: 295, y: 210 (Ônibus)
     // #CV-2023-1122 -> x: 80, y: 340 (Praça / Luz)
-    
+
     final filtered = _getFilteredReports();
 
     return Stack(
@@ -369,12 +412,15 @@ class _MapTabState extends State<MapTab> {
         if (r.id.contains('8941')) {
           left = 125;
           top = 195;
-          color = r.status == 'Resolvido' ? Colors.green : Colors.amber.shade600;
+          color =
+              r.status == 'Resolvido' ? Colors.green : Colors.amber.shade600;
           icon = Icons.park;
         } else if (r.id.contains('5510')) {
           left = 295;
           top = 210;
-          color = r.status == 'Resolvido' ? Colors.green : ReclameJaColors.textMuted;
+          color = r.status == 'Resolvido'
+              ? Colors.green
+              : ReclameJaColors.textMuted;
           icon = Icons.directions_bus;
         } else if (r.id.contains('1122')) {
           left = 80;
@@ -402,15 +448,21 @@ class _MapTabState extends State<MapTab> {
               children: [
                 // mini label
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(6),
-                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 3)],
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black12, blurRadius: 3)
+                    ],
                   ),
                   child: Text(
                     r.subcategory.split(' ').first,
-                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: ReclameJaColors.textDark),
+                    style: const TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: ReclameJaColors.textDark),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -421,7 +473,12 @@ class _MapTabState extends State<MapTab> {
                     color: color,
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
-                    boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 4,
+                          offset: Offset(0, 2))
+                    ],
                   ),
                   child: Icon(icon, color: Colors.white, size: 16),
                 ),
@@ -430,7 +487,8 @@ class _MapTabState extends State<MapTab> {
                   height: 6,
                   decoration: BoxDecoration(
                     color: color,
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(9)),
+                    borderRadius:
+                        const BorderRadius.vertical(bottom: Radius.circular(9)),
                   ),
                 ),
               ],
@@ -459,14 +517,16 @@ class _MapTabState extends State<MapTab> {
                     children: [
                       Text(
                         report.title,
-                        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                        style: textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         report.location,
-                        style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                        style: textTheme.bodySmall
+                            ?.copyWith(color: ReclameJaColors.textMuted),
                       ),
                     ],
                   ),
@@ -487,30 +547,41 @@ class _MapTabState extends State<MapTab> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.thumb_up_alt_outlined, size: 14, color: ReclameJaColors.secondaryEmerald),
+                    const Icon(Icons.thumb_up_alt_outlined,
+                        size: 14, color: ReclameJaColors.secondaryEmerald),
                     const SizedBox(width: 4),
                     Text(
                       '${report.confirmationCount} apoios',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ReclameJaColors.secondaryEmerald),
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: ReclameJaColors.secondaryEmerald),
                     ),
                   ],
                 ),
                 TextButton(
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => ReportDetailScreen(report: report)),
+                      MaterialPageRoute(
+                          builder: (context) =>
+                              ReportDetailScreen(report: report)),
                     );
                   },
                   child: const Row(
                     children: [
-                      Text('Ver detalhes', style: TextStyle(fontWeight: FontWeight.bold, color: ReclameJaColors.secondaryEmerald)),
-                      Icon(Icons.arrow_forward, size: 14, color: ReclameJaColors.secondaryEmerald),
+                      Text('Ver detalhes',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: ReclameJaColors.secondaryEmerald)),
+                      Icon(Icons.arrow_forward,
+                          size: 14, color: ReclameJaColors.secondaryEmerald),
                     ],
                   ),
                 ),
@@ -521,7 +592,6 @@ class _MapTabState extends State<MapTab> {
       ),
     );
   }
-
 }
 
 class _UserLocationPin extends StatelessWidget {
@@ -549,7 +619,9 @@ class _UserLocationPin extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 4)
+              ],
               border: Border.all(color: const Color(0xFF10B981), width: 4),
             ),
           ),
@@ -573,7 +645,9 @@ class _FloatingMapButton extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))
+        ],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -625,10 +699,10 @@ class MapPainter extends CustomPainter {
     // Draw secondary roads
     canvas.drawLine(const Offset(-20, 160), const Offset(420, 160), paintRoad);
     canvas.drawLine(const Offset(-20, 330), const Offset(420, 330), paintRoad);
-    
+
     paintRoad.strokeWidth = 18;
     canvas.drawLine(const Offset(130, -20), const Offset(130, 540), paintRoad);
-    
+
     paintRoad.strokeWidth = 15;
     canvas.drawLine(const Offset(280, -20), const Offset(280, 540), paintRoad);
 

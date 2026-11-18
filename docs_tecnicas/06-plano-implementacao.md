@@ -1,6 +1,11 @@
 # Plano de implementação pendente
 
-**Atualizado em:** 17/11/2026
+**Atualizado em:** 18/11/2026
+
+> O detalhamento atualizado por camada está em
+> [`08-pendencias-por-camada.md`](./08-pendencias-por-camada.md). O banco de
+> dados está concluído em termos de modelagem e DDL; o MER/DER vigente está em
+> [`05-diagramas-mer-der.md`](./05-diagramas-mer-der.md).
 
 **Escopo:** backend, integração com o app e validação para o piloto. A ordem abaixo
 respeita a sequência definida para o MVP; classificação de imagens permanece
@@ -40,10 +45,12 @@ depois das verificações de segurança.
 10. **Validação automática concluída:** o backend compila e 84 testes unitários
     passam, incluindo API, autenticação, reportes, notificações, LGPD,
     analítica, ações de moderação e gate visual.
-11. **Integração Flutter iniciada:** OTP real por API, armazenamento do access
-    token em memória e criação de reporte sem foto pela API foram conectados.
-    Upload assinado, refresh rotativo persistente no app, push, polling offline
-    e sincronização por outbox continuam pendentes.
+11. **Integração Flutter em andamento:** OTP, armazenamento seguro de tokens,
+    refresh rotativo, criação de reportes com localização e foto, upload
+    assinado, outbox, lista/detalhe, ações do reporte, LGPD e métricas públicas
+    estão conectados no cliente. Faltam mapa/feed público, configuração
+    Firebase por ambiente/plataforma, autenticação Google e validação ponta a
+    ponta em dispositivo.
 
 O desfoque de rostos e placas ainda é um no-op documentado. Não há classificação
 de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA.
@@ -60,29 +67,26 @@ de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA
   `log`, jobs de status no encaminhamento e tarefa Oracle a cada 15 minutos
   para reportes com prazo vencido. Payload de push contém somente tipo, ID e
   status; sem token, o acompanhamento segue disponível (RT-15, RT-39).
-- **Integração Flutter pendente:** solicitar permissão após login; obter e
-  registrar token/plataforma em `PUT /v1/me/devices`; sincronizar rotação do
-  token e removê-lo em `DELETE /v1/me/devices` ao sair ou revogar a permissão;
-  tratar push em primeiro plano e ao abrir, consultando `GET /v1/reports/{id}`
-  para atualizar o estado local. Sem permissão, manter atualização por consulta
-  ao abrir a lista e em primeiro plano, no máximo a cada 60 segundos.
+- **Flutter conectado no cliente; integração de push real depende do ambiente:**
+  o código solicita permissão após login, registra/rotaciona/remove tokens em
+  `/v1/me/devices`, trata abertura e foreground consultando
+  `/v1/reports/{id}` e mantém polling de até 60 segundos como fallback. Validar
+  com Firebase configurado e dispositivos de cada plataforma.
 - **Pendente validar:** fluxo SMTP real no MailHog; compilar e executar schema,
   pacotes e `DBMS_SCHEDULER` em Oracle compatível. A integração FCM real também
   depende de credenciais Firebase do ambiente.
 
 ### 5. Ações do reporte e moderação
 
-- Implementar reabertura dentro da janela configurada, cobrança somente para
-  reportes atrasados e com limite de repetição, e sinalização de conteúdo
-  (RN-13, RN-14).
-- Criar persistência transacional e eventos imutáveis para as ações, com
-  autorização por papel e justificativas obrigatórias quando aplicável.
-- Implementar a fila e os endpoints de moderação para reportes sem regra,
-  jobs esgotados e conteúdo sinalizado; registrar ações administrativas em
-  trilha de auditoria.
-- Completar as transições e os endpoints do órgão para atualizar status e
-  justificar resolução/contestação.
-- Implementar deduplicação e agrupamento de reportes antes do encaminhamento,
+- [x] Reabertura dentro da janela configurada, cobrança limitada para reportes
+  atrasados e sinalização de conteúdo (RN-13, RN-14).
+- [x] Persistência transacional, eventos imutáveis e autorização por papel nas
+  ações; justificativas são exigidas quando aplicável.
+- [x] Fila/endpoints de moderação para reportes sem regra, jobs esgotados e
+  conteúdo sinalizado; ações administrativas registradas em auditoria.
+- [x] Transições e endpoints do órgão para atualizar status e justificar
+  resolução/contestação.
+- [ ] Implementar deduplicação e agrupamento de reportes antes do encaminhamento,
   respeitando raio, janela temporal, categoria e limites configuráveis (RT-36,
   RT-37).
 - **Aceite:** testes cobrem autorização, janelas, idempotência, limites e
@@ -94,15 +98,14 @@ de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA
 
 ### 6. LGPD e analítica
 
-- Implementar exportação dos dados pessoais, exclusão/anonimização de conta e
-  correção de dados; definir retenção com orientação jurídica antes de fixar
-  prazos (RT-48, RT-51, RT-53).
-- Aplicar auditoria a operações administrativas e limitar papéis/privilégios
-  de banco (RT-47, RT-50).
-- Criar geração incremental de indicadores, sem dados pessoais, com
-  pseudonimização/agregação e proteção por contagem mínima (RT-41, RT-42).
-- Implementar API de métricas e exportação CSV; concluir painéis público, do
-  órgão, de moderação e de gestão, usando somente a API (RT-43, RT-44).
+- [x] Exportação de dados pessoais, exclusão/anonimização de conta e correção
+  de dados (RT-48, RT-51, RT-53); [ ] definir retenção com orientação jurídica.
+- [x] Auditoria das operações administrativas (RT-47); [ ] validar papéis e
+  privilégios mínimos no banco Oracle de homologação (RT-50).
+- [x] Geração de indicadores sem dados pessoais, com agregação e limiar mínimo
+  (RT-41, RT-42).
+- [x] API de métricas e exportação CSV; [ ] concluir painéis do órgão, de
+  moderação e de gestão usando somente a API (RT-43, RT-44).
 - **Aceite:** exportação e exclusão verificadas ponta a ponta; consultas
   analíticas reproduzíveis com dados sintéticos; células abaixo do limiar não
   são expostas.
@@ -129,10 +132,14 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
 - **Estado atual:** gate fail-closed implementado no worker e coberto por
   testes. Nenhum provedor externo está habilitado por padrão.
 
-### 7. Validação Oracle real
+### 7. Homologação operacional em Oracle
 
-- Aplicar schema e migrações em Oracle compatível com o alvo; compilar todos os
-  packages e resolver erros PL/SQL.
+O modelo e o DDL do banco estão concluídos. Esta etapa é somente a validação de
+implantação no ambiente Oracle-alvo; não é uma pendência de desenho ou de
+implementação do banco.
+
+- Aplicar schema e migrations em Oracle compatível com o alvo; confirmar a
+  compilação dos packages PL/SQL e do `DBMS_SCHEDULER`.
 - Validar criação/transações, idempotência, reserva concorrente com
   `FOR UPDATE SKIP LOCKED`, leases, retries, terminalização e operações de
   foto/moderação.
@@ -142,6 +149,34 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
   volume compartilhado de fotos, backup e restauração.
 - **Aceite:** instalação limpa e upgrade de banco existente concluídos; testes
   de integração/utPLSQL e fluxo ponta a ponta passam em Oracle real.
+
+### 8. Infraestrutura com Docker, Docker Compose e CI/CD
+
+Há uma base de infraestrutura versionada: Dockerfile do backend, Compose para
+API/MailHog/volume de fotos e CI com testes unitários do backend. A etapa
+adicional é completar e validar o fluxo reproduzível de desenvolvimento até
+homologação/produção.
+
+- [x] Dockerfile para a API, `docker-compose.yml` inicial e workflow de CI
+  executando os testes unitários do backend.
+- [ ] Incluir o worker no Compose e configurar API/worker para compartilharem
+  configuração, conexão Oracle e volume de fotos; definir healthchecks e ordem
+  de inicialização sem depender apenas de `depends_on`.
+- [ ] Documentar configuração do Oracle-alvo e validar o stack com banco
+  Oracle aprovado; não depender de imagens de banco não oficiais ou
+  desconhecidas.
+- [ ] Expandir CI para lint/type-check e testes do backend, análise/testes/build
+  Flutter e lint/test/build Angular; validar também a construção das imagens e
+  executar smoke/contrato quando as dependências estiverem disponíveis.
+- [ ] Implementar CD para publicar imagens versionadas e implantar em
+  homologação com smoke test, gestão de secrets e aprovação explícita antes de
+  produção; documentar rollback.
+- [ ] Adicionar verificação de vulnerabilidades de dependências/imagens e
+  garantir que credenciais e arquivos `.env` reais nunca sejam incluídos nos
+  artefatos ou logs.
+- **Aceite:** configuração Compose válida, stack validado com serviços
+  disponíveis, CI verde para as plataformas incluídas no piloto e implantação
+  em homologação rastreável e reversível.
 
 ## Lacunas transversais do projeto
 
@@ -156,28 +191,32 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
   fase de backend.
 
 - **Contrato da API:** comparar `04-openapi.yaml` com as rotas reais e
-  implementar ou retirar do contrato rotas ainda ausentes, incluindo
-  proximidade, ações do reporte, dispositivos, exportação/exclusão, agência e
-  analítica.
+  implementar ou retirar do contrato rotas ainda ausentes. A rota de
+  proximidade continua pendente; ações do reporte, dispositivos,
+  exportação/exclusão, agência, moderação e analítica já têm rotas no backend.
 - **Triagem automática:** implementar o encaminhamento após o período de
   confirmação, com a política definida para sugestão ausente ou ambígua
   (D10 / `TRIAGE_AUTO_CONFIRM_MINUTES`).
-- **App Flutter:** além da integração de push detalhada na etapa 4, completar
-  autenticação, upload assinado, triagem e acompanhamento; finalizar
-  outbox/offline, retries e sincronização sem perda/duplicidade. As telas
-  existentes não substituem os testes de integração contra a API.
-- **Estado atual:** o cliente HTTP compartilha LGPD/exportação/exclusão e
-  métricas públicas. Login, upload assinado, triagem, push e outbox permanecem
-  em integração.
+- **App Flutter:** completar mapa/feed contra uma rota pública de proximidade,
+  habilitar push com a configuração Firebase do ambiente, decidir/integrar
+  autenticação Google e executar testes ponta a ponta da outbox e dos fluxos
+  reportados em dispositivo.
+- **Estado atual:** login OTP, upload assinado, triagem, acompanhamento,
+  ações do reporte, LGPD e métricas públicas estão ligados ao cliente. Push
+  tem código condicionado à configuração Firebase; o app não substitui testes
+  integrados contra o backend/Oracle.
 - **Painéis:** o diretório `web/` ainda não constitui os painéis descritos na
   especificação; priorizar protótipo público e do órgão após a API de ações e
   indicadores.
-- **Entrega e operação:** preparar CI, ambiente reproduzível (API, Oracle,
-  worker e MailHog), lint/type-check, testes de contrato/e2e, rate limiting,
-  métricas/logs/alertas, TLS, gestão de segredos e runbook de backup/restauração.
+- **Entrega e operação:** concluir a etapa 8 de Docker/Compose/CI/CD e preparar
+  ambientes, testes de contrato/e2e, rate limiting, métricas/logs/alertas, TLS,
+  gestão de segredos e runbook de backup/restauração.
 - **Decisões externas:** confirmar política de retenção e os pesos/premissas
   pendentes com jurídico e responsáveis de produto antes de fechar os critérios
   de produção.
+- **Inventário completo:** consultar
+  [`08-pendencias-por-camada.md`](./08-pendencias-por-camada.md) para os itens
+  detalhados de backend, banco, mobile, web e operação.
 
 ## Fora do MVP atual
 

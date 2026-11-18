@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../services/report_store.dart';
+import '../services/api_client.dart';
 import 'report_detail_screen.dart';
 
 class PostSendConfirmationScreen extends StatefulWidget {
@@ -10,39 +11,43 @@ class PostSendConfirmationScreen extends StatefulWidget {
   const PostSendConfirmationScreen({super.key, required this.report});
 
   @override
-  State<PostSendConfirmationScreen> createState() => _PostSendConfirmationScreenState();
+  State<PostSendConfirmationScreen> createState() =>
+      _PostSendConfirmationScreenState();
 }
 
-class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen> {
+class _PostSendConfirmationScreenState
+    extends State<PostSendConfirmationScreen> {
   bool _isConfirmedByMunicipe = false;
 
-  void _confirmData() {
-    setState(() {
-      _isConfirmedByMunicipe = true;
-    });
-    
-    // Add positive tracking event in timeline
-    final event = ReportEvent(
-      title: 'Classificação Confirmada',
-      time: '16/11 às 17:05',
-      desc: 'Matriz de encaminhamento re-validada pelo cidadão.',
-      actor: 'Marina (Você)',
-    );
-    ReportStore().updateReportStatus(widget.report.id, 'Recebido', event);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Dados validados com sucesso pelo munícipe!'),
-        backgroundColor: ReclameJaColors.secondaryEmerald,
-      ),
-    );
+  Future<void> _confirmData() async {
+    final apiId = widget.report.apiId;
+    if (apiId == null || widget.report.isOffline) {
+      _showMessage('A confirmação ficará disponível após o envio do reporte.');
+      return;
+    }
+    try {
+      final detail = await ApiClient().triageReport(
+        reportId: apiId,
+        action: 'confirm',
+      );
+      ReportStore().upsertFromApi(detail);
+      if (!mounted) return;
+      setState(() => _isConfirmedByMunicipe = true);
+      _showMessage('Classificação confirmada e encaminhada.', success: true);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(
+        'Ainda estamos preparando a classificação. Tente novamente em instantes.',
+      );
+    }
   }
 
   void _correctData() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Corrigir Dados', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        title: Text('Corrigir Dados',
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
         content: Text(
           'Modo de edição: você gostaria de alterar a classificação recomendada para outra categoria da matriz?',
           style: GoogleFonts.hankenGrotesk(),
@@ -50,38 +55,68 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar', style: TextStyle(color: ReclameJaColors.textMuted)),
+            child: const Text('Cancelar',
+                style: TextStyle(color: ReclameJaColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ReclameJaColors.primaryYellow,
               foregroundColor: ReclameJaColors.textDark,
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              // Toggle category in store to demonstrate edit ability
-              final updatedEvent = ReportEvent(
-                title: 'Categoria Retificada',
-                time: '16/11 às 17:05',
-                desc: 'Categoria e Órgão de destino alterados manualmente pelo cidadão de "Pavimentação" para "Drenagem".',
-                actor: 'Marina (Você)',
-              );
-              ReportStore().updateReportStatus(widget.report.id, 'Recebido', updatedEvent);
-              
-              setState(() {
-                _isConfirmedByMunicipe = true;
-              });
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Classificação retificada com sucesso!'),
-                  backgroundColor: ReclameJaColors.secondaryEmerald,
-                ),
-              );
+              final apiId = widget.report.apiId;
+              if (apiId == null || widget.report.isOffline) {
+                _showMessage('A correção ficará disponível após o envio.');
+                return;
+              }
+              try {
+                const categoryCodes = {
+                  'Risco Urbano': 'risco_urbano',
+                  'Transporte': 'transporte_publico',
+                  'Saúde': 'saude_atendimento',
+                };
+                const subcategoryCodes = {
+                  'Pavimentação': 'buraco_via',
+                  'Iluminação': 'iluminacao_falha',
+                  'Poda e Árvores': 'arvore_risco',
+                  'Água e Esgoto': 'esgoto_vazamento',
+                  'Ônibus e Paradas': 'onibus_atraso_lotacao',
+                  'Atendimento UBS': 'demora_atendimento',
+                };
+                final result = await ApiClient().triageReport(
+                  reportId: apiId,
+                  action: 'correct',
+                  category: categoryCodes[widget.report.category] ??
+                      widget.report.category,
+                  subcategory: subcategoryCodes[widget.report.subcategory] ??
+                      widget.report.subcategory,
+                );
+                ReportStore().upsertFromApi(result);
+                if (!mounted) return;
+                setState(() => _isConfirmedByMunicipe = true);
+                _showMessage('Classificação atualizada.', success: true);
+              } catch (error) {
+                if (!mounted) return;
+                _showMessage(
+                  'Não foi possível atualizar agora. Tente novamente em instantes.',
+                );
+              }
             },
             child: const Text('Alterar categoria'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showMessage(String message, {bool success = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success
+            ? ReclameJaColors.secondaryEmerald
+            : ReclameJaColors.alertRed,
       ),
     );
   }
@@ -119,7 +154,8 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                           shape: BoxShape.circle,
                           border: Border.all(color: const Color(0xFF86EFAC)),
                         ),
-                        child: const Icon(Icons.task_alt, color: Color(0xFF16A34A), size: 34),
+                        child: const Icon(Icons.task_alt,
+                            color: Color(0xFF16A34A), size: 34),
                       ),
                       Container(
                         width: 24,
@@ -129,14 +165,16 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Icon(Icons.check, color: Colors.white, size: 14),
+                        child: const Icon(Icons.check,
+                            color: Colors.white, size: 14),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   // Protocol Badge
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFFDCFCE7),
                       borderRadius: BorderRadius.circular(999),
@@ -145,7 +183,8 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.tag, size: 14, color: Color(0xFF14532D)),
+                        const Icon(Icons.tag,
+                            size: 14, color: Color(0xFF14532D)),
                         const SizedBox(width: 4),
                         Text(
                           'Protocolo ${widget.report.id}',
@@ -160,13 +199,15 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                   const SizedBox(height: 8),
                   Text(
                     'Entendemos o seu reporte',
-                    style: textTheme.displayMedium?.copyWith(fontSize: 26, fontWeight: FontWeight.bold),
+                    style: textTheme.displayMedium
+                        ?.copyWith(fontSize: 26, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Nossa IA analisou a imagem e os dados para direcionar ao setor correto da prefeitura.',
-                    style: textTheme.bodyMedium?.copyWith(color: ReclameJaColors.textMuted),
+                    'Revise a categoria e confirme o reporte para encaminhamento.',
+                    style: textTheme.bodyMedium
+                        ?.copyWith(color: ReclameJaColors.textMuted),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -209,25 +250,32 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                       children: [
                         if (widget.report.imageUrl == null)
                           const Center(
-                            child: Icon(Icons.photo, size: 48, color: ReclameJaColors.textMuted),
+                            child: Icon(Icons.photo,
+                                size: 48, color: ReclameJaColors.textMuted),
                           ),
                         Positioned(
                           top: 10,
                           right: 10,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.95),
                               borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: const Color(0xFF86EFAC)),
+                              border:
+                                  Border.all(color: const Color(0xFF86EFAC)),
                             ),
                             child: const Row(
                               children: [
-                                Icon(Icons.verified, color: Color(0xFF16A34A), size: 14),
+                                Icon(Icons.verified,
+                                    color: Color(0xFF16A34A), size: 14),
                                 SizedBox(width: 4),
                                 Text(
-                                  'Análise concluída',
-                                  style: TextStyle(color: Color(0xFF16A34A), fontSize: 11, fontWeight: FontWeight.bold),
+                                  'Análise pendente',
+                                  style: TextStyle(
+                                      color: Color(0xFF16A34A),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -237,18 +285,21 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                           bottom: 10,
                           left: 10,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.7),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.location_on, color: Colors.white, size: 14),
+                                const Icon(Icons.location_on,
+                                    color: Colors.white, size: 14),
                                 const SizedBox(width: 4),
                                 Text(
                                   widget.report.location,
-                                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 11),
                                 ),
                               ],
                             ),
@@ -262,9 +313,12 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                   // Smart Classification Badge
                   Row(
                     children: [
-                      const Icon(Icons.auto_fix_high, size: 16, color: ReclameJaColors.secondaryEmerald),
+                      const Icon(Icons.auto_fix_high,
+                          size: 16, color: ReclameJaColors.secondaryEmerald),
                       const SizedBox(width: 6),
-                      Text('Classificação Inteligente', style: textTheme.labelSmall?.copyWith(color: ReclameJaColors.textMuted)),
+                      Text('Categoria informada',
+                          style: textTheme.labelSmall
+                              ?.copyWith(color: ReclameJaColors.textMuted)),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -273,7 +327,9 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                     decoration: BoxDecoration(
                       color: ReclameJaColors.surfaceLow,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: ReclameJaColors.surfaceDim.withValues(alpha: 0.3)),
+                      border: Border.all(
+                          color: ReclameJaColors.surfaceDim
+                              .withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
@@ -283,7 +339,8 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                             color: Color(0xFFDCFCE7),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.construction, color: Color(0xFF16A34A), size: 20),
+                          child: const Icon(Icons.construction,
+                              color: Color(0xFF16A34A), size: 20),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -292,12 +349,14 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                             children: [
                               Text(
                                 '${widget.report.category} • ${widget.report.subcategory}',
-                                style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+                                style: textTheme.labelLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Buraco ou desnível verificado na malha viária.',
-                                style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                                'A classificação poderá ser revisada pela equipe responsável.',
+                                style: textTheme.bodySmall?.copyWith(
+                                    color: ReclameJaColors.textMuted),
                               ),
                             ],
                           ),
@@ -311,27 +370,46 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Severidade Detectada', style: textTheme.labelSmall?.copyWith(color: ReclameJaColors.textMuted)),
+                      Text('Severidade',
+                          style: textTheme.labelSmall
+                              ?.copyWith(color: ReclameJaColors.textMuted)),
                       Text(
-                        'Média-Alta (Risco Preventivo)',
-                        style: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.bold),
+                        'Não avaliada',
+                        style: textTheme.labelSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Expanded(child: Container(height: 6, decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.amber.shade300))),
+                      Expanded(
+                          child: Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: Colors.amber.shade300))),
                       const SizedBox(width: 6),
-                      Expanded(child: Container(height: 6, decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: Colors.amber.shade500))),
+                      Expanded(
+                          child: Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: Colors.amber.shade500))),
                       const SizedBox(width: 6),
-                      Expanded(child: Container(height: 6, decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), color: ReclameJaColors.surfaceDim))),
+                      Expanded(
+                          child: Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: ReclameJaColors.surfaceDim))),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Impacto identificado no tráfego local e circulação de pedestres.',
-                    style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                    style: textTheme.bodySmall
+                        ?.copyWith(color: ReclameJaColors.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -341,12 +419,15 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                     decoration: BoxDecoration(
                       color: const Color(0xFFF0FDF4),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFF86EFAC).withValues(alpha: 0.8)),
+                      border: Border.all(
+                          color:
+                              const Color(0xFF86EFAC).withValues(alpha: 0.8)),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.account_balance, color: Color(0xFF16A34A), size: 22),
+                        const Icon(Icons.account_balance,
+                            color: Color(0xFF16A34A), size: 22),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -354,12 +435,17 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                             children: [
                               Text(
                                 'Destino do Chamado',
-                                style: textTheme.labelSmall?.copyWith(color: const Color(0xFF15803D), fontWeight: FontWeight.bold),
+                                style: textTheme.labelSmall?.copyWith(
+                                    color: const Color(0xFF15803D),
+                                    fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 widget.report.organ,
-                                style: textTheme.labelLarge?.copyWith(fontSize: 13, fontWeight: FontWeight.bold, height: 1.3),
+                                style: textTheme.labelLarge?.copyWith(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.3),
                               ),
                             ],
                           ),
@@ -387,34 +473,46 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: ReclameJaColors.textDark,
-                                  side: const BorderSide(color: ReclameJaColors.borderSlate),
+                                  side: const BorderSide(
+                                      color: ReclameJaColors.borderSlate),
                                   minimumSize: const Size.fromHeight(48),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10)),
                                 ),
                                 onPressed: _correctData,
                                 icon: const Icon(Icons.edit, size: 16),
-                                label: const Text('Corrigir dados', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                label: const Text('Corrigir dados',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: ReclameJaColors.primaryYellow,
+                                  backgroundColor:
+                                      ReclameJaColors.primaryYellow,
                                   foregroundColor: ReclameJaColors.textDark,
                                   minimumSize: const Size.fromHeight(48),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10)),
                                 ),
                                 onPressed: _confirmData,
-                                icon: const Icon(Icons.thumb_up_alt_outlined, size: 16),
-                                label: const Text('Sim, confirmar', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                icon: const Icon(Icons.thumb_up_alt_outlined,
+                                    size: 16),
+                                label: const Text('Sim, confirmar',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
                         )
                       else
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(12),
@@ -423,7 +521,8 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 20),
+                              const Icon(Icons.check_circle,
+                                  color: Color(0xFF16A34A), size: 20),
                               const SizedBox(width: 8),
                               Text(
                                 'Dados validados com sucesso!',
@@ -456,20 +555,29 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('O que vai acontecer agora', style: textTheme.titleMedium),
+                      Text('O que vai acontecer agora',
+                          style: textTheme.titleMedium),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: const Color(0xFFDCFCE7),
                           borderRadius: BorderRadius.circular(99),
                         ),
                         child: Row(
                           children: [
-                            Container(width: 5, height: 5, decoration: const BoxDecoration(color: Color(0xFF16A34A), shape: BoxShape.circle)),
+                            Container(
+                                width: 5,
+                                height: 5,
+                                decoration: const BoxDecoration(
+                                    color: Color(0xFF16A34A),
+                                    shape: BoxShape.circle)),
                             const SizedBox(width: 4),
                             Text(
                               'Em fluxo',
-                              style: textTheme.labelSmall?.copyWith(color: const Color(0xFF16A34A), fontWeight: FontWeight.bold),
+                              style: textTheme.labelSmall?.copyWith(
+                                  color: const Color(0xFF16A34A),
+                                  fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -481,21 +589,24 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                     icon: Icons.assignment_turned_in_outlined,
                     stepTitle: '1. Encaminhamento oficial',
                     timeLabel: '2h',
-                    description: 'Inclusão no sistema central de zeladoria e agendamento na base técnica distrital.',
+                    description:
+                        'Inclusão no sistema central de zeladoria e agendamento na base técnica distrital.',
                     isDone: true,
                   ),
                   _buildTimelineItem(
                     icon: Icons.engineering_outlined,
                     stepTitle: '2. Vistoria técnica',
                     timeLabel: '48h úteis',
-                    description: 'Equipe de campo avalia a extensão do dano e emite a ordem de serviço operacional.',
+                    description:
+                        'Equipe de campo avalia a extensão do dano e emite a ordem de serviço operacional.',
                     isDone: false,
                   ),
                   _buildTimelineItem(
                     icon: Icons.notifications_active_outlined,
                     stepTitle: '3. Notificações diretas',
                     timeLabel: 'Tempo real',
-                    description: 'Receba fotos de vistoria, início das obras e o registro da conclusão do reparo.',
+                    description:
+                        'Receba fotos de vistoria, início das obras e o registro da conclusão do reparo.',
                     isDone: false,
                     isLast: true,
                   ),
@@ -519,18 +630,22 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                       color: ReclameJaColors.surfaceBright,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.share_location, color: ReclameJaColors.secondaryEmerald, size: 20),
+                    child: const Icon(Icons.share_location,
+                        color: ReclameJaColors.secondaryEmerald, size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Vizinhos engajados', style: textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        Text('Vizinhos engajados',
+                            style: textTheme.labelMedium
+                                ?.copyWith(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 2),
                         Text(
                           '3 moradores reforçaram a urgência deste local nas últimas 48h.',
-                          style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                          style: textTheme.bodySmall
+                              ?.copyWith(color: ReclameJaColors.textMuted),
                         ),
                       ],
                     ),
@@ -546,23 +661,26 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                 backgroundColor: ReclameJaColors.primaryYellow,
                 foregroundColor: ReclameJaColors.textDark,
                 minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () {
                 // Find Report in Store to get latest state and navigate
                 final latestReport = ReportStore().allReports.firstWhere(
-                  (r) => r.id == widget.report.id,
-                  orElse: () => widget.report,
-                );
+                      (r) => r.id == widget.report.id,
+                      orElse: () => widget.report,
+                    );
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => ReportDetailScreen(report: latestReport),
+                    builder: (context) =>
+                        ReportDetailScreen(report: latestReport),
                   ),
                 );
               },
               icon: const Icon(Icons.receipt_long, size: 20),
-              label: const Text('Acompanhar chamado', style: TextStyle(fontWeight: FontWeight.bold)),
+              label: const Text('Acompanhar chamado',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 10),
             TextButton(
@@ -572,7 +690,9 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
               },
               child: Text(
                 'Voltar ao início',
-                style: textTheme.labelLarge?.copyWith(color: ReclameJaColors.secondaryEmerald, fontWeight: FontWeight.bold),
+                style: textTheme.labelLarge?.copyWith(
+                    color: ReclameJaColors.secondaryEmerald,
+                    fontWeight: FontWeight.bold),
               ),
             ),
             const SizedBox(height: 24),
@@ -600,11 +720,20 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: isDone ? const Color(0xFFDCFCE7) : ReclameJaColors.surfaceLow,
+                  color: isDone
+                      ? const Color(0xFFDCFCE7)
+                      : ReclameJaColors.surfaceLow,
                   shape: BoxShape.circle,
-                  border: Border.all(color: isDone ? const Color(0xFF86EFAC) : ReclameJaColors.borderSlate),
+                  border: Border.all(
+                      color: isDone
+                          ? const Color(0xFF86EFAC)
+                          : ReclameJaColors.borderSlate),
                 ),
-                child: Icon(icon, size: 16, color: isDone ? const Color(0xFF16A34A) : ReclameJaColors.textMuted),
+                child: Icon(icon,
+                    size: 16,
+                    color: isDone
+                        ? const Color(0xFF16A34A)
+                        : ReclameJaColors.textMuted),
               ),
               if (!isLast)
                 Expanded(
@@ -624,22 +753,31 @@ class _PostSendConfirmationScreenState extends State<PostSendConfirmationScreen>
                 children: [
                   Row(
                     children: [
-                      Text(stepTitle, style: GoogleFonts.hankenGrotesk(fontSize: 14, fontWeight: FontWeight.bold)),
+                      Text(stepTitle,
+                          style: GoogleFonts.hankenGrotesk(
+                              fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: ReclameJaColors.surfaceLow,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(timeLabel, style: GoogleFonts.hankenGrotesk(fontSize: 10, color: ReclameJaColors.textMuted)),
+                        child: Text(timeLabel,
+                            style: GoogleFonts.hankenGrotesk(
+                                fontSize: 10,
+                                color: ReclameJaColors.textMuted)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: GoogleFonts.hankenGrotesk(fontSize: 12, color: ReclameJaColors.textMuted, height: 1.3),
+                    style: GoogleFonts.hankenGrotesk(
+                        fontSize: 12,
+                        color: ReclameJaColors.textMuted,
+                        height: 1.3),
                   ),
                 ],
               ),

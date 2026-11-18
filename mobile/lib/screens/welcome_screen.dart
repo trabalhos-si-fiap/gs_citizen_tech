@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
+import '../services/api_client.dart';
+import '../services/push_service.dart';
+import '../services/session_store.dart';
 import 'home_shell.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -20,21 +23,24 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     {
       'icon': Icons.photo_camera,
       'title': 'Reporte em segundos',
-      'desc': 'Tire uma foto, marque no mapa e envie sem complicação nem filas burocráticas.',
+      'desc':
+          'Tire uma foto, marque no mapa e envie sem complicação nem filas burocráticas.',
       'bg': const Color(0xFFE6F7EC),
       'fg': const Color(0xFF006D30),
     },
     {
       'icon': Icons.timeline,
       'title': 'Acompanhe cada passo',
-      'desc': 'Notificações em tempo real com protocolo oficial e encaminhamento direto.',
+      'desc':
+          'Notificações em tempo real com protocolo oficial e encaminhamento direto.',
       'bg': const Color(0xFFFEF9C5),
       'fg': const Color(0xFF656100),
     },
     {
       'icon': Icons.people_outline,
       'title': 'Unidos pelo bairro',
-      'desc': 'Confirme ocorrências de vizinhos para alertar a prefeitura sobre urgências.',
+      'desc':
+          'Confirme ocorrências de vizinhos para alertar a prefeitura sobre urgências.',
       'bg': const Color(0xFFD1FAE5),
       'fg': const Color(0xFF006D30),
     }
@@ -51,7 +57,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     if (!_acceptedTerms || !_confirmedAge) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor, aceite os termos e confirme sua idade antes de continuar.'),
+          content: Text(
+              'Por favor, aceite os termos e confirme sua idade antes de continuar.'),
           backgroundColor: ReclameJaColors.alertRed,
         ),
       );
@@ -96,8 +103,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               Text(
                 'Enviaremos um código de verificação (OTP) de 6 dígitos para o seu e-mail.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: ReclameJaColors.textMuted,
-                ),
+                      color: ReclameJaColors.textMuted,
+                    ),
               ),
               const SizedBox(height: 20),
               TextField(
@@ -110,7 +117,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
               const SizedBox(height: 20),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final email = _emailController.text.trim();
                   if (email.isEmpty || !email.contains('@')) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -121,8 +128,23 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     );
                     return;
                   }
-                  Navigator.pop(context); // Close email sheet
-                  _showOtpVerificationSheet(email);
+                  try {
+                    await ApiClient().requestOtp(
+                      email: email,
+                      consentVersion: 'v1.0.2',
+                    );
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                    _showOtpVerificationSheet(email);
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error.toString()),
+                        backgroundColor: ReclameJaColors.alertRed,
+                      ),
+                    );
+                  }
                 },
                 child: const Text('Enviar código'),
               ),
@@ -134,6 +156,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   void _showOtpVerificationSheet(String email) {
+    final parentNavigator = Navigator.of(context);
+    final parentMessenger = ScaffoldMessenger.of(context);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -172,8 +196,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               Text(
                 'Enviamos um código de 6 dígitos para o e-mail $email. O código expira em 10 minutos.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: ReclameJaColors.textMuted,
-                ),
+                      color: ReclameJaColors.textMuted,
+                    ),
               ),
               const SizedBox(height: 20),
               TextField(
@@ -194,41 +218,79 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final otp = _otpController.text.trim();
                   if (otp.length != 6) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Por favor, digite o código de 6 dígitos.'),
+                        content:
+                            Text('Por favor, digite o código de 6 dígitos.'),
                         backgroundColor: ReclameJaColors.alertRed,
                       ),
                     );
                     return;
                   }
-                  
-                  Navigator.pop(context); // Close OTP sheet
-                  
-                  // Login Success!
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Row(
-                        children: [
-                          const Icon(Icons.check_circle_outline, color: Colors.white),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text('Bem-vindo ao Reclame Já, ${email.split('@')[0]}!')),
-                        ],
-                      ),
-                      backgroundColor: ReclameJaColors.secondaryEmerald,
-                    ),
-                  );
 
-                  // Navigate to Home Shell as a logged-in Citizen
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const HomeShell(isVisitor: false, userName: 'Marina'),
-                    ),
-                  );
+                  try {
+                    final data = await ApiClient().verifyOtp(
+                      email: email,
+                      code: otp,
+                    );
+                    if (!context.mounted) return;
+                    Navigator.pop(context);
+                    final user = data['user'] as Map<String, dynamic>;
+                    await SessionStore.saveTokens(
+                      data['access_token'] as String,
+                      data['refresh_token'] as String,
+                    );
+                    await SessionStore.saveAccountEmail(
+                      (user['email'] as String),
+                    );
+                    if (!mounted) return;
+                    try {
+                      await PushService.initializeAfterLogin();
+                    } catch (error) {
+                      parentMessenger.showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Login concluído, mas não foi possível ativar as notificações.',
+                          ),
+                        ),
+                      );
+                    }
+                    if (!mounted) return;
+                    final name = (user['email'] as String).split('@').first;
+                    parentMessenger.showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.check_circle_outline,
+                                color: Colors.white),
+                            const SizedBox(width: 8),
+                            Expanded(
+                                child: Text('Bem-vindo ao Reclame Já, $name!')),
+                          ],
+                        ),
+                        backgroundColor: ReclameJaColors.secondaryEmerald,
+                      ),
+                    );
+                    parentNavigator.pushReplacement(
+                      MaterialPageRoute(
+                        builder: (context) => HomeShell(
+                          isVisitor: false,
+                          userName: name,
+                        ),
+                      ),
+                    );
+                  } catch (error) {
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error.toString()),
+                        backgroundColor: ReclameJaColors.alertRed,
+                      ),
+                    );
+                  }
                 },
                 child: const Text('Confirmar entrada'),
               ),
@@ -243,7 +305,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     if (!_acceptedTerms || !_confirmedAge) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor, aceite os termos e confirme sua idade antes de continuar.'),
+          content: Text(
+              'Por favor, aceite os termos e confirme sua idade antes de continuar.'),
           backgroundColor: ReclameJaColors.alertRed,
         ),
       );
@@ -252,29 +315,20 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Conectando com o Google...'),
-        backgroundColor: ReclameJaColors.secondaryEmerald,
+        content: Text(
+          'Login com Google ainda não está configurado. Use o acesso por e-mail.',
+        ),
+        backgroundColor: ReclameJaColors.alertRed,
       ),
     );
-
-    // Mock Google Login Success!
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const HomeShell(isVisitor: false, userName: 'Marina'),
-          ),
-        );
-      }
-    });
   }
 
   void _exploreAsVisitor() {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => const HomeShell(isVisitor: true, userName: 'Visitante'),
+        builder: (context) =>
+            const HomeShell(isVisitor: true, userName: 'Visitante'),
       ),
     );
   }
@@ -305,19 +359,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ],
                 ),
               ),
-              
+
               // Hero Section (Simulating neighborhood background decoration)
               Container(
                 height: 140,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
                   color: const Color(0xFFF1F5F9),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                      'https://lh3.googleusercontent.com/aida-public/AB6AXuCnllQuuY7jIxXn-WXt0z-wk0L_Y5gQvkpyAgPAwyyqD77-x8y9k_l7KpfaK_UBhzdXflHSROd7vlugQjlg9L77OSA_X5wx3OWROwbMS9v5ERa_apo_py2JFThXW9paXyD4UOf0KPFBpDHpz-Sf3BnS9gAwSIb5WPWqc49X579GKJHg0RKoGNJ9cAJJm7ej02qrtQ_CiKYYvOXpJGvN4u0lhEVq23z8-muEXMTFSnKO'
-                    ),
-                    fit: BoxFit.cover,
-                  ),
                 ),
                 child: Container(
                   decoration: BoxDecoration(
@@ -383,7 +431,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: _benefits.length,
-                  separatorBuilder: (context, index) => const SizedBox(width: 12),
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 12),
                   itemBuilder: (context, index) {
                     final b = _benefits[index];
                     return Container(
@@ -397,7 +446,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: ReclameJaColors.textDark.withValues(alpha: 0.03),
+                            color: ReclameJaColors.textDark
+                                .withValues(alpha: 0.03),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
@@ -456,7 +506,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
               // Consent & GDPR Controls
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: ReclameJaColors.surfaceLow,
                   borderRadius: BorderRadius.circular(12),
@@ -577,7 +628,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       width: 18,
                       height: 18,
                       alignment: Alignment.center,
-                      child: const Icon(Icons.g_mobiledata, color: Colors.blue, size: 28),
+                      child: const Icon(Icons.g_mobiledata,
+                          color: Colors.blue, size: 28),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -606,7 +658,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.travel_explore, size: 20, color: ReclameJaColors.secondaryEmerald),
+                    const Icon(Icons.travel_explore,
+                        size: 20, color: ReclameJaColors.secondaryEmerald),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -621,7 +674,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(Icons.arrow_forward, size: 16, color: ReclameJaColors.secondaryEmerald),
+                    const Icon(Icons.arrow_forward,
+                        size: 16, color: ReclameJaColors.secondaryEmerald),
                   ],
                 ),
               ),
@@ -639,7 +693,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.lock, size: 14, color: ReclameJaColors.textMuted),
+                        const Icon(Icons.lock,
+                            size: 14, color: ReclameJaColors.textMuted),
                         const SizedBox(width: 6),
                         Text(
                           'Privacidade & Transparência',
@@ -670,21 +725,26 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 children: [
                   TextButton(
                     onPressed: () {
-                      _showDialog('Termos de Uso', 'Termos de Uso oficiais do Reclame Já para engajamento e transparência cidadã.');
+                      _showDialog('Termos de Uso',
+                          'Termos de Uso oficiais do Reclame Já para engajamento e transparência cidadã.');
                     },
                     child: Text(
                       'Termos de Uso',
-                      style: textTheme.bodySmall?.copyWith(decoration: TextDecoration.underline),
+                      style: textTheme.bodySmall
+                          ?.copyWith(decoration: TextDecoration.underline),
                     ),
                   ),
-                  const Text('•', style: TextStyle(color: ReclameJaColors.surfaceDim)),
+                  const Text('•',
+                      style: TextStyle(color: ReclameJaColors.surfaceDim)),
                   TextButton(
                     onPressed: () {
-                      _showDialog('Política de Privacidade', 'Política de Privacidade oficial de acordo com a LGPD (Lei 13.709/18). Seus dados estão seguros.');
+                      _showDialog('Política de Privacidade',
+                          'Política de Privacidade oficial de acordo com a LGPD (Lei 13.709/18). Seus dados estão seguros.');
                     },
                     child: Text(
                       'Política de Privacidade',
-                      style: textTheme.bodySmall?.copyWith(decoration: TextDecoration.underline),
+                      style: textTheme.bodySmall
+                          ?.copyWith(decoration: TextDecoration.underline),
                     ),
                   ),
                 ],
@@ -701,12 +761,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(title, style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+        title: Text(title,
+            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
         content: Text(content, style: GoogleFonts.hankenGrotesk()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar', style: TextStyle(color: ReclameJaColors.secondaryEmerald)),
+            child: const Text('Fechar',
+                style: TextStyle(color: ReclameJaColors.secondaryEmerald)),
           ),
         ],
       ),

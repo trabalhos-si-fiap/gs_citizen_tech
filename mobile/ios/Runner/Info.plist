@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Usamos a câmera para anexar evidências ao seu reporte.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Usamos sua localização para registrar o local da ocorrência que você deseja reportar.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Você pode escolher uma imagem da galeria para anexar ao seu reporte.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

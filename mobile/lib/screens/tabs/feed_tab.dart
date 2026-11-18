@@ -88,7 +88,8 @@ class _FeedTabState extends State<FeedTab> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: ReclameJaColors.primaryYellow.withValues(alpha: 0.35),
+                      color:
+                          ReclameJaColors.primaryYellow.withValues(alpha: 0.35),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -143,7 +144,8 @@ class _FeedTabState extends State<FeedTab> {
 
           // Horizontal Category Filter Chips
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
             child: SizedBox(
               height: 40,
               child: ListView(
@@ -151,11 +153,14 @@ class _FeedTabState extends State<FeedTab> {
                 children: [
                   _buildFilterChip('Todos', Icons.all_inclusive),
                   const SizedBox(width: 8),
-                  _buildFilterChip('Risco Urbano', Icons.warning, color: Colors.amber.shade700),
+                  _buildFilterChip('Risco Urbano', Icons.warning,
+                      color: Colors.amber.shade700),
                   const SizedBox(width: 8),
-                  _buildFilterChip('Transporte', Icons.directions_bus, color: ReclameJaColors.tertiaryBlue),
+                  _buildFilterChip('Transporte', Icons.directions_bus,
+                      color: ReclameJaColors.tertiaryBlue),
                   const SizedBox(width: 8),
-                  _buildFilterChip('Saúde', Icons.local_hospital, color: ReclameJaColors.alertRed),
+                  _buildFilterChip('Saúde', Icons.local_hospital,
+                      color: ReclameJaColors.alertRed),
                 ],
               ),
             ),
@@ -200,16 +205,22 @@ class _FeedTabState extends State<FeedTab> {
             Icon(
               icon,
               size: 14,
-              color: isSelected ? ReclameJaColors.textDark : (color ?? ReclameJaColors.textMuted),
+              color: isSelected
+                  ? ReclameJaColors.textDark
+                  : (color ?? ReclameJaColors.textMuted),
             ),
             const SizedBox(width: 4),
           ],
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
           const SizedBox(width: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
             decoration: BoxDecoration(
-              color: isSelected ? ReclameJaColors.textDark : ReclameJaColors.surfaceDim,
+              color: isSelected
+                  ? ReclameJaColors.textDark
+                  : ReclameJaColors.surfaceDim,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -217,7 +228,9 @@ class _FeedTabState extends State<FeedTab> {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                color: isSelected ? ReclameJaColors.primaryYellow : ReclameJaColors.textDark,
+                color: isSelected
+                    ? ReclameJaColors.primaryYellow
+                    : ReclameJaColors.textDark,
               ),
             ),
           ),
@@ -270,7 +283,8 @@ class _FeedTabState extends State<FeedTab> {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => ReportDetailScreen(report: report)),
+            MaterialPageRoute(
+                builder: (context) => ReportDetailScreen(report: report)),
           );
         },
         child: Padding(
@@ -322,12 +336,14 @@ class _FeedTabState extends State<FeedTab> {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.location_on, size: 12, color: ReclameJaColors.textMuted),
+                            const Icon(Icons.location_on,
+                                size: 12, color: ReclameJaColors.textMuted),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
                                 report.location,
-                                style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+                                style: textTheme.bodySmall?.copyWith(
+                                    color: ReclameJaColors.textMuted),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -339,7 +355,8 @@ class _FeedTabState extends State<FeedTab> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: statusBg,
                       borderRadius: BorderRadius.circular(12),
@@ -350,12 +367,16 @@ class _FeedTabState extends State<FeedTab> {
                         Container(
                           width: 6,
                           height: 6,
-                          decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                          decoration: BoxDecoration(
+                              color: statusColor, shape: BoxShape.circle),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           report.status,
-                          style: TextStyle(color: statusColor, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: statusColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -368,7 +389,8 @@ class _FeedTabState extends State<FeedTab> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.thumb_up_alt_outlined, size: 14, color: ReclameJaColors.secondaryEmerald),
+                      const Icon(Icons.thumb_up_alt_outlined,
+                          size: 14, color: ReclameJaColors.secondaryEmerald),
                       const SizedBox(width: 4),
                       Text(
                         '${report.confirmationCount} pessoas apoiaram',
@@ -380,7 +402,8 @@ class _FeedTabState extends State<FeedTab> {
                       ),
                       if (report.comments.isNotEmpty) ...[
                         const SizedBox(width: 12),
-                        const Icon(Icons.chat_bubble_outline, size: 13, color: ReclameJaColors.textMuted),
+                        const Icon(Icons.chat_bubble_outline,
+                            size: 13, color: ReclameJaColors.textMuted),
                         const SizedBox(width: 4),
                         Text(
                           '${report.comments.length}',
@@ -403,7 +426,8 @@ class _FeedTabState extends State<FeedTab> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Icon(Icons.arrow_forward, size: 14, color: ReclameJaColors.secondaryEmerald),
+                      Icon(Icons.arrow_forward,
+                          size: 14, color: ReclameJaColors.secondaryEmerald),
                     ],
                   ),
                 ],
@@ -423,16 +447,19 @@ class _FeedTabState extends State<FeedTab> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.location_city_outlined, size: 56, color: ReclameJaColors.surfaceDim),
+            const Icon(Icons.location_city_outlined,
+                size: 56, color: ReclameJaColors.surfaceDim),
             const SizedBox(height: 16),
             Text(
               'Nenhum chamado no momento',
-              style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style:
+                  textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               'Não foram encontradas ocorrências abertas nesta categoria no seu raio de proximidade.',
-              style: textTheme.bodySmall?.copyWith(color: ReclameJaColors.textMuted),
+              style: textTheme.bodySmall
+                  ?.copyWith(color: ReclameJaColors.textMuted),
               textAlign: TextAlign.center,
             ),
           ],
