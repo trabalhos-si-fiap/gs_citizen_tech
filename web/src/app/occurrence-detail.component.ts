@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { AuthService } from './auth.service';
 
 @Component({
   selector: 'app-occurrence-detail',
@@ -64,7 +65,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
           <section class="content-card action-card">
             <div class="card-title-row"><span class="title-icon spotlight-tint"><span class="material-symbols-outlined">bolt</span></span><div><h2>Ações Imediatas da Ocorrência</h2></div><i class="live-dot"></i></div>
             <p class="action-intro">Selecione a resolução administrativa para atualizar a malha operacional da prefeitura.</p>
-            <div class="action-panel">
+            <div class="action-panel" *ngIf="canChangeStatus">
               <h3><span class="material-symbols-outlined">sync</span> Atualizar Status do Processo</h3>
               <p>Altera o ciclo de vida da demanda e notifica os canais centrais.</p>
               <div class="status-options">
@@ -112,6 +113,8 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
   styleUrl: './occurrence-detail.component.css',
 })
 export class OccurrenceDetailComponent {
+  private readonly auth = inject(AuthService);
+  readonly canChangeStatus = this.auth.profile()?.role === 'agency';
   readonly protocol: string;
   status = 'Em Análise Técnica';
   pendingStatus = this.status;

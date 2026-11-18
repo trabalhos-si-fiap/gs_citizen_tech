@@ -1,5 +1,7 @@
 import { Component, OnDestroy, inject } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ROLE_LABELS } from './auth.models';
+import { AuthService } from './auth.service';
 
 @Component({
   selector: 'app-shell',
@@ -15,7 +17,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 
         <section class="jurisdiction">
           <span class="eyebrow">JURISDIÇÃO ATIVA</span>
-          <strong>Prefeitura Municipal</strong>
+          <strong>{{ agencyName }}</strong>
           <span class="online"><i></i> Servidor Oficial Ativo</span>
         </section>
 
@@ -48,9 +50,9 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
             <span><small>SLA Diário</small><strong>94.2% Concluído</strong></span>
             <span class="material-symbols-outlined arrow" aria-hidden="true">chevron_right</span>
           </div>
-          <a class="logout-link" routerLink="/login">
+          <button class="logout-link" type="button" (click)="auth.logout()">
             <span class="material-symbols-outlined" aria-hidden="true">logout</span> Encerrar Expediente
-          </a>
+          </button>
         </div>
       </aside>
 
@@ -58,7 +60,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
         <header class="topbar" [class.dashboard-topbar]="isDashboard">
           <div class="secretary-select">
             <span class="material-symbols-outlined" aria-hidden="true">account_balance</span>
-            <span><small>Secretaria Ativa</small><strong>Sec. de Infraestrutura e Serviços Urbanos</strong></span>
+            <span><small>Secretaria Ativa</small><strong>{{ agencyName }}</strong></span>
             <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
           </div>
           <div class="topbar-spacer"></div>
@@ -67,7 +69,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
             <span class="material-symbols-outlined" aria-hidden="true">notifications</span><b>3</b>
           </button>
           <div class="profile">
-            <span class="profile-identity" [class.dashboard-hidden]="isDashboard"><strong>Eng. Rodrigo Alencar</strong><small>COORDENADOR GERAL DE ZELADORIA</small></span>
+            <span class="profile-identity" [class.dashboard-hidden]="isDashboard"><strong>{{ auth.profile()?.email }}</strong><small>{{ roleLabel }}</small></span>
             <span class="avatar material-symbols-outlined" aria-hidden="true">person</span>
           </div>
         </header>
@@ -78,6 +80,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
   styleUrl: './shell.component.css',
 })
 export class ShellComponent implements OnDestroy {
+  readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly navigationSubscription = this.router.events.subscribe((event) => {
     if (event instanceof NavigationEnd) {
@@ -86,6 +89,16 @@ export class ShellComponent implements OnDestroy {
   });
 
   isDashboard = this.router.url === '/dashboard' || this.router.url.startsWith('/dashboard#');
+
+  get agencyName(): string {
+    const profile = this.auth.profile();
+    return profile?.agency?.name ?? (profile?.scope === 'all' ? 'Todos os órgãos' : 'Prefeitura Municipal');
+  }
+
+  get roleLabel(): string {
+    const role = this.auth.profile()?.role ?? '';
+    return (ROLE_LABELS[role] ?? role).toUpperCase();
+  }
 
   ngOnDestroy(): void {
     this.navigationSubscription.unsubscribe();

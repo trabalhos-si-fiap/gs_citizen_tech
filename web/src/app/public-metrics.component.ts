@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { API_BASE } from './api.config';
 
 interface AgencyMetric {
   agency: { name: string };
@@ -46,7 +47,7 @@ interface MetricsResponse {
   styleUrl: './public-metrics.component.css',
 })
 export class PublicMetricsComponent implements OnInit {
-  private readonly apiBase = (window as Window & { RECLAME_JA_API_URL?: string }).RECLAME_JA_API_URL ?? 'http://localhost:8000';
+  private readonly apiBase = API_BASE;
   category = '';
   agency = '';
   data: MetricsResponse | null = null;

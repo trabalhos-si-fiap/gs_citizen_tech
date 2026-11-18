@@ -97,6 +97,12 @@
 
 .primary-nav a,
 .logout-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
   display: flex;
   min-height: 42px;
   align-items: center;

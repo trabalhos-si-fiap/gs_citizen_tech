@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./back-end/.env.example
+    environment:
+      SMTP_HOST: mailhog
+      DEV_STAFF_ACCOUNTS: servidor@prefeitura.gov.br:agency:prefeitura-demo-zeladoria,gestor@prefeitura.gov.br:manager
     ports:
       - "8000:8000"
     volumes:
