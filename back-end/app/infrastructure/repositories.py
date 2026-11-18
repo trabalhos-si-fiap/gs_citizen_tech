@@ -1398,6 +1398,11 @@ class InMemoryReportRepository:
             received_at=persisted.received_at,
             group_id=str(canonical_id),
             confirmation_count=confirmation_count,
+            subcategory=(
+                self._classifications[report.id].subcategory
+                if report.id in self._classifications
+                else None
+            ),
         )
 
     def record_classification(
@@ -3032,7 +3037,22 @@ class OracleReportRepository:
                            r.lon,
                            r.received_at,
                            r.group_id,
-                           NVL(g.confirmation_count, 0)
+                           NVL(g.confirmation_count, 0),
+                           (
+                               SELECT JSON_VALUE(
+                                   e.payload, '$.subcategory'
+                                   RETURNING VARCHAR2(64) NULL ON ERROR
+                               )
+                               FROM report_events e
+                               WHERE e.report_id = r.id
+                                 AND e.type IN (
+                                     'classificado',
+                                     'classificacao_confirmada',
+                                     'classificacao_corrigida'
+                                 )
+                               ORDER BY e.id DESC
+                               FETCH FIRST 1 ROW ONLY
+                           ) AS subcategory
                     FROM area_reports r
                     LEFT JOIN report_groups g ON g.id = r.group_id
                     ORDER BY r.received_at DESC
@@ -3054,6 +3074,7 @@ class OracleReportRepository:
                         received_at=row[6],
                         group_id=str(row[7]),
                         confirmation_count=int(row[8]),
+                        subcategory=row[9],
                     )
                     for row in cursor.fetchall()
                 ]

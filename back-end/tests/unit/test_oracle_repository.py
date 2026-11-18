@@ -438,6 +438,7 @@ class OracleAreaQueryTests(unittest.TestCase):
                 received_at,
                 "grupo-9",
                 4,
+                "buraco_via",
             )
         ]
         repository = OracleReportRepository(database)
@@ -469,6 +470,7 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual((item.latitude, item.longitude), (-23.5501, -46.6331))
         self.assertEqual(item.group_id, "grupo-9")
         self.assertEqual(item.confirmation_count, 4)
+        self.assertEqual(item.subcategory, "buraco_via")
 
 
 

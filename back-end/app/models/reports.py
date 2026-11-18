@@ -244,6 +244,7 @@ class ReportSummary:
     received_at: datetime
     group_id: str
     confirmation_count: int
+    subcategory: str | None = None
 
 
 @dataclass(frozen=True)
