@@ -1,5 +1,10 @@
 # Ready to Do — APIs prontas do backend × integração com o WEB
 
+> **Atualização:** o backend ganhou as rotas `/v1/staff/*` para servidores
+> municipais (login por OTP, papel/órgão no banco, listagem, detalhe e status por
+> Bearer). Isso resolve as lacunas de listagem, detalhe, autorização por órgão e
+> mudança de status descritas abaixo. Veja a seção 7 e `back-end/README.md`.
+
 Mapeamento feito a partir do código em `back-end/app` (FastAPI) e `web/src/app` (Angular 21).
 Base URL local: `http://localhost:8000` — docs interativas em `/docs`.
 
@@ -126,3 +131,20 @@ Resposta com tokens: `{access_token, refresh_token, expires_in, user:{id,email,r
 3. Login por OTP com armazenamento/refresh de token (4.2 item 7), usando usuário moderador criado no banco.
 4. Fila de moderação em `/ocorrencias` (4.2 item 8).
 5. Decisões de backend antes de seguir: rota de listagem para servidor, permissão de leitura do detalhe para `moderator`/`agency`, e status via Bearer em vez de `X-API-Key`.
+
+## 7. Rotas de servidor (`/v1/staff`) — prontas
+
+Auth: Bearer do login OTP; a conta precisa ter papel de servidor no banco
+(`DEV_STAFF_ACCOUNTS` em memória; `db/provision_staff.sql` no Oracle).
+
+| Tela do WEB | Rota |
+|---|---|
+| Guarda de rota / cabeçalho | `GET /v1/staff/me` |
+| Filtro de órgãos | `GET /v1/staff/agencies` |
+| Dashboard (cards) | `GET /v1/staff/summary` → `total, by_status, overdue, due_soon` |
+| `/ocorrencias` | `GET /v1/staff/reports?status&category&overdue&q&limit&cursor` |
+| `/ocorrencias/:id` | `GET /v1/staff/reports/{id}` |
+| Alterar status | `POST /v1/staff/reports/{id}/status` `{action: in_progress\|resolved\|contest, deadline?, justification?}` (só papel `agency`) |
+
+Ainda sem API: ação de moderação (aprovar/rejeitar), redirecionar órgão,
+mensagem oficial ao cidadão, séries temporais e gestão de usuários.

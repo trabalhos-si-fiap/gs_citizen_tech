@@ -148,12 +148,16 @@ o estado de conclusão do modelo lógico nem do DDL.
 
 - [x] A página `/indicadores` consome `GET /v1/public/metrics` e oferece
   exportação CSV.
+- [x] **Backend pronto** para o painel do servidor: rotas `/v1/staff/*`
+  (perfil, órgãos, resumo, lista paginada, detalhe e alteração de status) com
+  login por OTP, papel e órgão resolvidos no banco e escopo por órgão. Ver
+  [`back-end/README.md`](../back-end/README.md).
 
 ### Pendências funcionais
 
-- [ ] Definir e implementar autenticação institucional e autorização por
-  perfil. Não colocar `AGENCY_API_KEYS` ou credenciais privilegiadas no
-  navegador; o mecanismo de acesso do órgão precisa ser aprovado e protegido.
+- [ ] Adaptar o web à autenticação institucional: trocar `/login` pelo fluxo
+  OTP (`/v1/auth/login` + `/v1/auth/refresh`), guardar tokens, aplicar guarda de
+  rota por papel (`GET /v1/staff/me`). Não colocar `AGENCY_API_KEYS` no navegador.
 - [ ] Substituir dados demonstrativos do dashboard por indicadores da API e
   implementar período, filtros, alertas, gráficos e exportação efetiva.
 - [ ] Substituir a lista ilustrativa de ocorrências por consulta paginada à API;
