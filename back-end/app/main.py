@@ -35,6 +35,7 @@ from app.services.notification_service import (
     CitizenNotificationService,
 )
 from app.services.photo_service import PhotoService
+from app.services.dedup_service import DeduplicationService
 from app.services.report_service import ReportService
 from app.services.privacy_service import PrivacyService
 from app.services.analytics_service import AnalyticsService
@@ -129,6 +130,7 @@ app.state.report_worker = ReportJobWorker(
     visual_verification_service=app.state.visual_verification_service,
     # Só roda dentro de run_once, ou seja, quando a API processa jobs inline.
     triage_sweeper=app.state.report_service.auto_confirm_due_triage,
+    deduplicator=DeduplicationService(report_repository).link_if_duplicate,
 )
 app.state.auth_service = AuthService(auth_repository, SmtpOtpMailer(settings))
 app.state.privacy_service = PrivacyService(auth_repository, report_repository)

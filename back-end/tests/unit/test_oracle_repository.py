@@ -516,5 +516,53 @@ class OracleTriageSweepTests(unittest.TestCase):
         self.assertTrue(database.fake_connection.committed)
 
 
+
+class OracleDedupTests(unittest.TestCase):
+    def test_list_dedup_candidates_filters_area_window_and_open_groups(self) -> None:
+        target = uuid4()
+        candidate = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+        since = datetime(2026, 11, 4, tzinfo=timezone.utc)
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [
+            (candidate, 12, -23.5501, -46.6331, "Buraco na calçada",
+             "risco_urbano", "buraco")
+        ]
+        repository = OracleReportRepository(database)
+        box = GeoBox(min_lat=-23.56, max_lat=-23.54, min_lon=-46.64, max_lon=-46.62)
+
+        found = repository.list_dedup_candidates(target, box, since, 50)
+
+        self.assertEqual(cursor.query_parameters, {
+            "report_id": str(target),
+            "min_lat": -23.56, "max_lat": -23.54,
+            "min_lon": -46.64, "max_lon": -46.62,
+            "since": since, "max_items": 50,
+        })
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("r.received_at >= :since", query)
+        self.assertIn("r.group_id <> (SELECT group_id FROM reports WHERE id = :report_id)", query)
+        self.assertIn("'resolvido'", query)
+        self.assertIn("'in_moderation'", query)
+        item = found[0]
+        self.assertEqual(item.report_id, UUID(candidate))
+        self.assertEqual(item.group_id, "12")
+        self.assertEqual(item.category, ReportCategory.URBAN_RISK)
+        self.assertEqual(item.subcategory, "buraco")
+        self.assertTrue(cursor.closed)
+
+    def test_link_to_group_calls_dedup_package(self) -> None:
+        database = FakeDatabase()
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+
+        repository.link_to_group(report_id, "12", similarity=0.91, distance_m=18.4)
+
+        cursor = database.fake_connection.fake_cursor
+        self.assertEqual(cursor.call_name, "PKG_DEDUP.vincular")
+        self.assertEqual(cursor.call_parameters, [str(report_id), 12, 0.91, 18.4])
+        self.assertTrue(database.fake_connection.committed)
+
+
 if __name__ == "__main__":
     unittest.main()

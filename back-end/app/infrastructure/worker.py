@@ -26,6 +26,7 @@ from app.services.notification_service import (
     AgencyNotificationService,
     CitizenNotificationService,
 )
+from app.services.dedup_service import DeduplicationService
 from app.services.photo_service import PhotoService
 from app.services.report_service import ReportService
 from app.services.visual_verification_service import VisualVerificationService
@@ -50,12 +51,15 @@ class ReportJobWorker:
         visual_verification_service: VisualVerificationService | None = None,
         heartbeat_path: Path | None = None,
         triage_sweeper: Callable[[], int] | None = None,
+        deduplicator: Callable[[UUID], bool] | None = None,
         sweep_interval_seconds: float | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._heartbeat_path = heartbeat_path
         # Varredura periódica da triagem pendente (D10), fora da fila de jobs.
         self._triage_sweeper = triage_sweeper
+        # Agrupamento de duplicados logo após a classificação (RT-36).
+        self._deduplicator = deduplicator
         self._sweep_interval = (
             settings.triage_sweep_interval_seconds
             if sweep_interval_seconds is None
@@ -130,6 +134,9 @@ class ReportJobWorker:
                 )
                 result = self._classification_service.classify(classification_input)
                 self._repository.record_classification(job.report_id, result)
+                if self._deduplicator is not None:
+                    # Falha aqui repete o job; a classificação já gravada é idempotente.
+                    self._deduplicator(job.report_id)
             elif job.stage == "verify_visual":
                 if self._visual_verification_service is None:
                     raise RuntimeError(
@@ -227,6 +234,7 @@ def main() -> None:
             triage_sweeper=ReportService(
                 repository, photo_storage
             ).auto_confirm_due_triage,
+            deduplicator=DeduplicationService(repository).link_if_duplicate,
         )
         logger.info("Worker de reportes iniciado.")
         worker.run_forever()

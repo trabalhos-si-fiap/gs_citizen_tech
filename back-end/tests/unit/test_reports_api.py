@@ -1,3 +1,4 @@
+import random
 import base64
 import hashlib
 import hmac
@@ -62,8 +63,8 @@ class ReportApiTests(unittest.IsolatedAsyncioTestCase):
         payload: dict[str, object] = {
             "id": str(uuid4()),
             "description": "Buraco na via",
-            "lat": -23.55,
-            "lon": -46.63,
+            "lat": round(random.uniform(-60, 60), 5),
+            "lon": round(random.uniform(-170, 170), 5),
             "client_created_at": datetime.now(timezone.utc).isoformat(),
         }
         payload.update(overrides)

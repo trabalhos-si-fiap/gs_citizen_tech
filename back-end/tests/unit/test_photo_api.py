@@ -1,3 +1,4 @@
+import random
 import hashlib
 import io
 import tempfile
@@ -84,8 +85,8 @@ class PhotoUploadApiTests(unittest.IsolatedAsyncioTestCase):
                 "id": str(report_id),
                 "description": "Buraco na via",
                 "has_photo": True,
-                "lat": -23.55,
-                "lon": -46.63,
+                "lat": round(random.uniform(-60, 60), 5),
+                "lon": round(random.uniform(-170, 170), 5),
                 "client_created_at": datetime.now(timezone.utc).isoformat(),
             },
             headers=headers,
