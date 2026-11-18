@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -40,17 +41,34 @@ class Settings(BaseSettings):
     report_job_poll_seconds: float = Field(default=1.0, gt=0)
     report_job_lease_seconds: int = Field(default=90, gt=0)
     report_job_max_attempts: int = Field(default=6, gt=0)
+    # true: a API também executa jobs (modo memória/dev sem worker).
+    # false: a API só enfileira; o container worker processa a fila.
+    inline_job_processing: bool = True
     agency_api_keys: str = ""
     # Somente com REPORT_REPOSITORY=memory: "email:papel[:agency_id],..."
     dev_staff_accounts: str = ""
     visual_verification_enabled: bool = False
     visual_verification_provider: str = ""
+    cors_allow_origins: str = (
+        "http://localhost:4200,http://127.0.0.1:4200,http://localhost:8000"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
+        # Docker secrets: cada arquivo em SECRETS_DIR (ex.: /run/secrets/jwt_secret)
+        # preenche o campo de mesmo nome. Variáveis de ambiente têm precedência.
+        secrets_dir=os.environ.get("SECRETS_DIR") or None,
     )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_allow_origins.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()

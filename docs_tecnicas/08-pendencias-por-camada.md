@@ -17,7 +17,7 @@ as telas mobile e os componentes Angular.
 | Banco de dados | **Concluído** | Nenhuma pendência de modelagem/DDL; apenas eventual homologação no Oracle-alvo |
 | Flutter mobile | Integração em andamento | Feed/mapa público, configuração Firebase/OAuth nativa e teste integrado em dispositivo |
 | Web Angular | Protótipos, com indicadores públicos integrados | Autenticação institucional e consumo real das APIs de gestão |
-| Operação | Parcial | Ambientes, segredos, observabilidade, segurança e backup/restore de produção |
+| Operação | Parcial | Stack local containerizado e testado; faltam CD, ambientes de homologação/produção, observabilidade e backup/restore |
 
 ### Dependências que bloqueiam mais de uma camada
 
@@ -33,11 +33,15 @@ as telas mobile e os componentes Angular.
 
 ### Prioridade alta — completar o fluxo funcional
 
-- [ ] **Publicar ocorrências por proximidade.** O contrato
-  [`04-openapi.yaml`](./04-openapi.yaml) descreve `GET /v1/reports/nearby`, mas
-  a rota não está registrada em `back-end/app/api/routes/`. Implementar
-  latitude/longitude, raio, filtros, ordenação/paginação e resposta pública
-  mínima, sem dados pessoais.
+- [x] **Publicar ocorrências por proximidade.** `GET /v1/reports/nearby` é
+  pública e recebe latitude/longitude, raio (50–5000 m), categoria, status,
+  `limit` e cursor opaco. O banco devolve candidatos num retângulo
+  (`ix_reports_lat_lon`, migração V006) e o serviço aplica haversine, mantém um
+  reporte por grupo (o mais próximo) e ordena por distância. A resposta não traz
+  protocolo, descrição, foto ou autor; coordenadas saem com 4 casas (~11 m) e raio
+  e distância são calculados sobre elas, para que não seja possível trilaterar a
+  posição exata. Reportes em moderação ficam fora. Limite conhecido: no máximo
+  1000 candidatos por consulta (os mais recentes), suficiente para o raio máximo.
 - [ ] **Conectar o agrupamento automático de duplicados.** `report_groups` e
   confirmações existem, mas reportes novos são criados sem uma busca/decisão
   completa de correspondência por distância, categoria e janela temporal.
@@ -119,9 +123,14 @@ o estado de conclusão do modelo lógico nem do DDL.
 
 ### Pendências antes de considerar a integração concluída
 
-- [ ] **Mapa e feed público:** substituir o mapa ilustrativo e as fontes locais
-  por dados da rota `/v1/reports/nearby`; hoje esses componentes ainda não
-  apresentam ocorrências públicas reais.
+- [x] **Mapa e feed público:** o mapa usa `flutter_map` com tiles do
+  OpenStreetMap e o feed "Perto de você" lista as ocorrências de
+  `/v1/reports/nearby` (sem token), com filtro por categoria, recarga ao parar o
+  mapa (*debounce* de 500 ms) e cache em memória por célula de ~110 m por 10
+  minutos. Sem permissão de localização, o centro padrão é a Praça da Sé.
+  Pendente: os tiles públicos do OSM não podem ser usados em produção (política
+  de uso); antes do lançamento, contratar ou hospedar um servidor de tiles e
+  trocar `osmTileUrl` em `mobile/lib/screens/tabs/map_tab.dart`.
 - [ ] **Push em dispositivo:** configurar Firebase para cada plataforma,
   habilitar `ENABLE_FIREBASE_PUSH`, validar permissão, registro/rotação/remoção
   do token, push em foreground e abertura por push. Sem essa configuração, o
@@ -180,29 +189,28 @@ integrações serem concluídas.
 
 ### Infraestrutura com Docker, Docker Compose e CI/CD
 
-**Base já existente:** [`back-end/Dockerfile`](../back-end/Dockerfile),
-[`docker-compose.yml`](../docker-compose.yml) com API, MailHog e volume de
-fotos, e workflow
-[`ci.yml`](../.github/workflows/ci.yml) com testes unitários do backend. A
-configuração atual ainda não sobe o worker nem o Oracle e o CI não valida mobile,
-web, build das imagens ou implantação contínua.
+**Estado:** stack containerizado com um container por função (`oracle`,
+`db-migrate`, `api`, `worker`, `web`, `mailpit` e `ollama` opcional), imagens
+multi-stage sem root e CI com testes unitários, estáticos de infraestrutura,
+varredura Trivy e smoke test ponta a ponta contra Oracle real. Detalhes em
+[`09-containers-docker.md`](./09-containers-docker.md).
 
-- [ ] Completar o Compose com worker, configuração compartilhada, conexão ao
-  Oracle-alvo e healthchecks; validar volume compartilhado de fotos entre API e
-  worker.
-- [ ] Manter o Oracle como serviço externo/aprovado e documentar como apontar
-  o ambiente local e o Compose para ele; não usar imagens de banco não oficiais
-  ou desconhecidas.
-- [ ] Separar configuração por ambiente e usar secrets fora do repositório;
-  não incluir `.env` real, credenciais ou segredos nas imagens, artefatos e
-  logs.
-- [ ] Expandir CI para lint/type-check e testes do backend, análise/testes/build
-  Flutter e lint/test/build Angular; construir e verificar as imagens Docker e
-  adicionar testes de contrato/smoke conforme os serviços estiverem disponíveis.
+- [x] Completar o Compose com worker, configuração compartilhada, conexão ao
+  Oracle e healthchecks; volume de fotos compartilhado entre API e worker
+  validado pelo smoke test.
+- [x] Oracle local em container com instalação limpa automatizada
+  (`db-migrate`); documentado como apontar para um Oracle externo.
+  - [ ] Decidir com a equipe entre `gvenzl/oracle-free` (atual, configurável
+    por `ORACLE_IMAGE`) e a imagem oficial do Oracle Container Registry.
+- [x] Configuração não secreta em `.env` e segredos como Docker secrets fora
+  do repositório e das imagens.
+- [ ] Expandir CI para lint/type-check do backend, análise/testes/build
+  Flutter e lint/test do Angular. Feito: testes do backend, build das imagens
+  (inclui o build do Angular) e smoke test do stack.
 - [ ] Criar CD para publicar imagens versionadas e implantar em homologação,
   executar smoke tests e exigir aprovação antes de produção; definir rollback.
-- [ ] Adicionar varredura de vulnerabilidades de dependências e imagens ao
-  pipeline.
+- [x] Varredura de vulnerabilidades das imagens (Trivy, falha em HIGH/CRITICAL
+  com correção disponível).
 
 ### Operação dos ambientes
 

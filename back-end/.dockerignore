@@ -1,0 +1,17 @@
+# Contexto mínimo: só requirements, app/ e db/ entram na imagem.
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.venv
+venv
+tests
+var
+.pytest_cache
+.mypy_cache
+.coverage
+Dockerfile
+.dockerignore
+README.md
+.gitkeep

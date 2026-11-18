@@ -329,7 +329,7 @@ Gerar os DTOs a partir de `contracts/openapi.yaml` (`openapi-generator` com `dar
 | `GET /v1/reports/{id}` | `ReportService.get_detail` | Monta `ReportDetail` a partir da projeção + eventos + `can_*` |
 | `POST /v1/reports/{id}/triage` | `ClassificationService.confirm` | Dispara roteamento |
 | `…/confirm`, `…/reopen`, `…/flag`, `…/nudge` | `ReportService` | Regras de RN-13, RN-14, RN-35 |
-| `GET /v1/reports/nearby` | `ReportService.nearby` | Por geohash + haversine; sem dados pessoais |
+| `GET /v1/reports/nearby` | `ReportService.nearby` | Retângulo lat/lon (índice) + haversine; um item por grupo; coordenadas com 4 casas; sem dados pessoais |
 | `GET /v1/me/*`, `PUT /v1/me/devices`, `DELETE /v1/me` | `UserService` | LGPD |
 | `POST /v1/agency/reports/{id}/status` | `AgencyService` | `X-API-Key`; transições válidas |
 | `GET /v1/public/metrics` | `AnalyticsService` | Só camada analítica |
