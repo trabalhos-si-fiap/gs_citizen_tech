@@ -16,3 +16,4 @@ coverage/
 .packages
 .pub-cache/
 .pubspec.lock
+.angular/
