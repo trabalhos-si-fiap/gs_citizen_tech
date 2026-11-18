@@ -8,11 +8,13 @@ import oracledb
 from pydantic import SecretStr
 
 from app.core.config import Settings
+from app.core.geo import GeoBox
 from app.infrastructure.database import OracleDatabase
 from app.infrastructure.geohash import encode_geohash
 from app.infrastructure.job_queue import OracleJobQueue
 from app.models.classification import ClassificationResult, RouteDecision
-from app.models.reports import ClientTimestampOutOfRange, NewReport
+from app.models.reports import ClientTimestampOutOfRange, NewReport, ReportStatus
+from app.models.taxonomy import ReportCategory
 from app.infrastructure.repositories import (
     OracleReportRepository,
     ReportIdConflict,
@@ -417,6 +419,56 @@ class OracleRepositoryTests(unittest.TestCase):
             [7, "worker-1", "DatabaseError", 6],
         )
         self.assertTrue(database.fake_connection.committed)
+
+
+class OracleAreaQueryTests(unittest.TestCase):
+    def test_list_in_area_filters_box_and_hides_moderation(self) -> None:
+        report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+        received_at = datetime(2026, 11, 17, 15, 0, tzinfo=timezone.utc)
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [
+            (
+                report_id,
+                "RPT-2026-4KQ7TD",
+                "em_andamento",
+                "risco_urbano",
+                -23.5501,
+                -46.6331,
+                received_at,
+                "grupo-9",
+                4,
+            )
+        ]
+        repository = OracleReportRepository(database)
+        box = GeoBox(min_lat=-23.56, max_lat=-23.54, min_lon=-46.64, max_lon=-46.62)
+
+        found = repository.list_in_area(box, max_items=50)
+
+        self.assertEqual(
+            cursor.query_parameters,
+            {
+                "min_lat": -23.56,
+                "max_lat": -23.54,
+                "min_lon": -46.64,
+                "max_lon": -46.62,
+                "max_items": 50,
+            },
+        )
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("r.lat BETWEEN :min_lat AND :max_lat", query)
+        self.assertIn("r.lon BETWEEN :min_lon AND :max_lon", query)
+        self.assertIn("r.triage_state <> 'in_moderation'", query)
+        self.assertIn("ORDER BY r.received_at DESC", query)
+        self.assertTrue(cursor.closed)
+        self.assertEqual(len(found), 1)
+        item = found[0]
+        self.assertEqual(item.id, UUID(report_id))
+        self.assertEqual(item.status, ReportStatus.IN_PROGRESS)
+        self.assertEqual(item.category, ReportCategory.URBAN_RISK)
+        self.assertEqual((item.latitude, item.longitude), (-23.5501, -46.6331))
+        self.assertEqual(item.group_id, "grupo-9")
+        self.assertEqual(item.confirmation_count, 4)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,12 @@ from app.models.reports import (
     ReopenReportRequest,
     FlagReportRequest,
     AgencyStatusRequest,
+    NearbyItemResponse,
+    NearbyPageResponse,
+    NearbyQuery,
+    ReportStatus,
 )
+from app.models.taxonomy import ReportCategory
 from app.infrastructure.repositories import (
     AlreadyConfirmed,
     PhotoStorageUnavailable,
@@ -49,6 +54,7 @@ from app.infrastructure.repositories import (
     NudgeNotAllowed,
     ReportAlreadyFlagged,
     InvalidAgencyAction,
+    InvalidReportCursor,
 )
 from app.infrastructure.photo_storage import (
     InvalidPhoto,
@@ -144,6 +150,57 @@ def create_report(
         received_at=result.received_at,
         triage_state=result.triage_state,
         upload=result.upload,
+    )
+
+
+@router.get(
+    "/nearby",
+    response_model=NearbyPageResponse,
+    summary="Ocorrências públicas por raio, categoria e status",
+    responses={422: {"description": "Parâmetros ou cursor inválidos."}},
+)
+def list_nearby_reports(
+    lat: float = Query(ge=-90, le=90),
+    lon: float = Query(ge=-180, le=180),
+    radius_m: int = Query(default=1000, ge=50, le=5000),
+    category: ReportCategory | None = None,
+    status: ReportStatus | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    service: ReportService = Depends(get_report_service),
+) -> NearbyPageResponse:
+    """Rota pública (sem token): não devolve dados pessoais nem texto livre."""
+    try:
+        page = service.nearby(
+            NearbyQuery(
+                latitude=lat,
+                longitude=lon,
+                radius_m=radius_m,
+                category=category,
+                status=status,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+    except InvalidReportCursor as error:
+        raise HTTPException(status_code=422, detail="Cursor inválido.") from error
+
+    return NearbyPageResponse(
+        items=[
+            NearbyItemResponse(
+                id=item.summary.id,
+                group_id=item.summary.group_id,
+                status=item.summary.status,
+                category=item.summary.category,
+                lat=item.summary.latitude,
+                lon=item.summary.longitude,
+                confirmation_count=item.summary.confirmation_count,
+                received_at=item.summary.received_at,
+                distance_m=round(item.distance_m),
+            )
+            for item in page.items
+        ],
+        next_cursor=page.next_cursor,
     )
 
 

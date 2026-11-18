@@ -10,6 +10,7 @@ Usa apenas a biblioteca padrão, para rodar em qualquer máquina com Python 3.10
 
 import json
 import os
+import random
 import re
 import subprocess
 import time
@@ -100,12 +101,15 @@ class StackSmokeTests(unittest.TestCase):
         token = session["access_token"]
 
         report_id = str(uuid.uuid4())
+        # Ponto aleatório na região central, para não colidir com execuções anteriores.
+        lat = round(-23.55 + random.uniform(-0.05, 0.05), 6)
+        lon = round(-46.63 + random.uniform(-0.05, 0.05), 6)
         report = {
             "id": report_id,
             "description": "Árvore com galho quebrado sobre a calçada (teste)",
             "category": "risco_urbano",
-            "lat": -23.5505,
-            "lon": -46.6333,
+            "lat": lat,
+            "lon": lon,
             "client_created_at": datetime.now(timezone.utc).isoformat(),
         }
         status, created, _ = request("POST", f"{API}/v1/reports", report, token)
@@ -121,6 +125,16 @@ class StackSmokeTests(unittest.TestCase):
 
         detail = wait_for(classified, timeout=30)
         self.assertIsNotNone(detail, "worker não classificou o reporte")
+
+        # Mapa público: sem token, consulta o Oracle por proximidade.
+        status, nearby, _ = request(
+            "GET", f"{API}/v1/reports/nearby?lat={lat}&lon={lon}&radius_m=50"
+        )
+        self.assertEqual(status, 200, nearby)
+        items = {item["id"]: item for item in nearby["items"]}
+        self.assertIn(report_id, items)
+        self.assertNotIn("description", items[report_id])
+        self.assertLessEqual(items[report_id]["distance_m"], 10)
 
 
 class ContainerRuntimeTests(unittest.TestCase):

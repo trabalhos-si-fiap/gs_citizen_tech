@@ -152,6 +152,26 @@ class ReportDetailResponse(ReportSummaryResponse):
     timeline: list[ReportTimelineEventResponse]
 
 
+class NearbyItemResponse(BaseModel):
+    """Item público do mapa: sem protocolo, descrição, foto ou autor."""
+
+    id: UUID
+    group_id: str | None
+    status: ReportStatus
+    category: ReportCategory | None
+    subcategory: str | None = None
+    lat: float
+    lon: float
+    confirmation_count: int
+    received_at: datetime
+    distance_m: int
+
+
+class NearbyPageResponse(BaseModel):
+    items: list[NearbyItemResponse]
+    next_cursor: str | None
+
+
 class UserReportPageResponse(BaseModel):
     items: list[ReportSummaryResponse]
     next_cursor: str | None
@@ -224,6 +244,29 @@ class ReportSummary:
     received_at: datetime
     group_id: str
     confirmation_count: int
+
+
+@dataclass(frozen=True)
+class NearbyQuery:
+    latitude: float
+    longitude: float
+    radius_m: int
+    category: ReportCategory | None
+    status: ReportStatus | None
+    limit: int
+    cursor: str | None
+
+
+@dataclass(frozen=True)
+class NearbyReport:
+    summary: ReportSummary
+    distance_m: float
+
+
+@dataclass(frozen=True)
+class NearbyPage:
+    items: list[NearbyReport]
+    next_cursor: str | None
 
 
 @dataclass(frozen=True)
