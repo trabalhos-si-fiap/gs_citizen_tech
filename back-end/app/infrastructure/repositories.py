@@ -571,7 +571,7 @@ class InMemoryReportRepository:
         self._flags: dict[UUID, set[int]] = {}
         self._next_comment_id = 1
         self._next_event_id = 1
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def create(self, report: NewReport) -> PersistedReport:
         with self._lock:
