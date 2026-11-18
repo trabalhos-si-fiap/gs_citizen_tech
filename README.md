@@ -103,8 +103,8 @@ O projeto contribui diretamente para os seguintes ODS da ONU:
 | Mobile | Flutter |
 | Frontend Web | Angular |
 | Backend | Python + FastAPI |
-| IA Generativa | Groq LLM |
-| Motor de Decisão | Árvore de Decisão |
+| IA Generativa | Ollama LLM |
+| Motor de Decisão | Matriz de Responsabilidade |
 | APIs | REST |
 | Documentação | Swagger/OpenAPI |
 
@@ -179,9 +179,9 @@ Python + FastAPI
 
 ## Inteligência Artificial
 
-### Groq LLM
+### Ollama LLM
 
-A plataforma utiliza um modelo de linguagem disponibilizado pela **Groq** para auxiliar na interpretação dos relatos enviados pelos usuários.
+A plataforma utiliza um modelo de linguagem disponibilizado pela **Ollama** para auxiliar na interpretação dos relatos enviados pelos usuários.
 
 ### Funções da IA
 
@@ -194,7 +194,7 @@ A plataforma utiliza um modelo de linguagem disponibilizado pela **Groq** para a
 
 ## Modelo de Decisão
 
-Após a classificação realizada pelo LLM, uma **Árvore de Decisão** é utilizada para determinar:
+Após a classificação realizada pelo LLM, uma **Matriz de Responsabilidade** é utilizada para determinar:
 
 - Nível de criticidade;
 - Categoria da ocorrência;
@@ -264,11 +264,11 @@ Aplicativo Flutter
     ↓
 API FastAPI
     ↓
-LLM (Groq)
+LLM (Ollama)
     ↓
 Classificação da Ocorrência
     ↓
-Árvore de Decisão
+Matriz de Responsabilidade
     ↓
 Identificação do Órgão Responsável
     ↓
@@ -327,7 +327,3 @@ Monitoramento e Indicadores
 - Apoio ao planejamento público.
 
 ---
-
-
-
---
