@@ -52,6 +52,14 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=32, max_length=512)
 
 
+class UpdateMeRequest(BaseModel):
+    email: EmailStr
+
+
+class DeleteAccountResponse(BaseModel):
+    status: str = "deletion_started"
+
+
 @dataclass(frozen=True)
 class AuthUser:
     id: int

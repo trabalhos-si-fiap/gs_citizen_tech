@@ -410,6 +410,25 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/User" }
+    patch:
+      tags: [me]
+      summary: Corrige dados da conta [EXTENSÃO]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Conta atualizada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409": { $ref: "#/components/responses/Error" }
     delete:
       tags: [me]
       summary: Exclui a conta e os dados pessoais (RN-41, RT-51) [EXTENSÃO]

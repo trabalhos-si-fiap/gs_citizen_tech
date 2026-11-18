@@ -50,6 +50,10 @@ class GoogleAccountConflict(Exception):
     """O e-mail ou identificador Google já está vinculado a outra conta."""
 
 
+class AccountNotFound(Exception):
+    """Conta de usuário inexistente."""
+
+
 class ReportNotFound(Exception):
     """O reporte solicitado não existe."""
 
@@ -82,7 +86,62 @@ class TriageConflict(Exception):
     """O reporte não está disponível para triagem."""
 
 
+class ReopenNotAllowed(Exception):
+    """O reporte não pode ser reaberto neste momento."""
+
+
+class NudgeNotAllowed(Exception):
+    """A cobrança não é permitida para este reporte."""
+
+
+class ReportAlreadyFlagged(Exception):
+    """O reporte já foi sinalizado por esta conta."""
+
+
+class InvalidAgencyAction(Exception):
+    """A ação administrativa não é válida para o estado atual."""
+
+
 class ReportRepository(Protocol):
+    def reopen_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str | None,
+    ) -> ReportDetail: ...
+
+    def flag_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str,
+        note: str | None,
+    ) -> None: ...
+
+    def nudge_report(self, report_id: UUID, user_id: int) -> None: ...
+
+    def update_agency_status(
+        self,
+        report_id: UUID,
+        action: str,
+        deadline: datetime | None,
+        justification: str | None,
+    ) -> ReportDetail: ...
+
+    def list_moderation(self, limit: int) -> list[ReportSummary]: ...
+
+    def export_user_data(self, user_id: int) -> dict[str, object]: ...
+
+    def delete_user_data(self, user_id: int) -> None: ...
+
+    def get_public_metrics(
+        self,
+        from_date: datetime | None,
+        to_date: datetime | None,
+        category: str | None,
+        agency_id: str | None,
+    ) -> dict[str, object]: ...
+
     def create(self, report: NewReport) -> PersistedReport:
         """Cria ou devolve o reporte existente para o mesmo UUID."""
 
@@ -168,6 +227,12 @@ class ObjectStorage(Protocol):
 
 
 class AuthRepository(Protocol):
+    def get_user(self, user_id: int) -> AuthUser: ...
+
+    def update_email(self, user_id: int, email: str) -> AuthUser: ...
+
+    def delete_account(self, user_id: int) -> None: ...
+
     def request_otp(
         self,
         email: str,
@@ -235,6 +300,50 @@ class InMemoryAuthRepository:
         self._refresh_tokens: dict[str, _RefreshToken] = {}
         self._next_user_id = 1
         self._lock = threading.Lock()
+
+    def get_user(self, user_id: int) -> AuthUser:
+        with self._lock:
+            user = self._users_by_id.get(user_id)
+            if user is None:
+                raise AccountNotFound
+            return user
+
+    def update_email(self, user_id: int, email: str) -> AuthUser:
+        with self._lock:
+            current = self._users_by_id.get(user_id)
+            if current is None:
+                raise AccountNotFound
+            normalized_email = email.strip().lower()
+            existing = self._users_by_email.get(normalized_email)
+            if existing is not None and existing.id != user_id:
+                raise GoogleAccountConflict
+
+            if current.email:
+                self._users_by_email.pop(current.email, None)
+            updated = AuthUser(
+                id=current.id,
+                email=normalized_email,
+                role=current.role,
+                consent_version=current.consent_version,
+                created_at=current.created_at,
+            )
+            self._users_by_id[user_id] = updated
+            self._users_by_email[normalized_email] = updated
+            return updated
+
+    def delete_account(self, user_id: int) -> None:
+        with self._lock:
+            user = self._users_by_id.pop(user_id, None)
+            if user is None:
+                raise AccountNotFound
+            if user.email:
+                self._users_by_email.pop(user.email, None)
+            google_sub = self._google_sub_by_user.pop(user_id, None)
+            if google_sub is not None:
+                self._users_by_google_sub.pop(google_sub, None)
+            for token_hash, refresh in list(self._refresh_tokens.items()):
+                if refresh.user_id == user_id:
+                    self._refresh_tokens.pop(token_hash, None)
 
     def request_otp(
         self,
@@ -391,6 +500,8 @@ class InMemoryReportRepository:
         self._deadlines: dict[UUID, datetime] = {}
         self._photo_keys: dict[UUID, str] = {}
         self._notification_devices: dict[str, tuple[int, str]] = {}
+        self._nudges: dict[UUID, list[int]] = {}
+        self._flags: dict[UUID, set[int]] = {}
         self._next_comment_id = 1
         self._next_event_id = 1
         self._lock = threading.Lock()
@@ -432,6 +543,8 @@ class InMemoryReportRepository:
             self._next_event_id += 1
             self._comments[report.id] = []
             self._confirmations[report.id] = set()
+            self._nudges[report.id] = []
+            self._flags[report.id] = set()
             return persisted
 
     def get_detail(self, report_id: UUID) -> ReportDetail:
@@ -580,6 +693,170 @@ class InMemoryReportRepository:
                 return None
             return persisted.status
 
+    def reopen_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str | None,
+    ) -> ReportDetail:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            report_input = self._report_inputs.get(report_id)
+            if stored is None or report_input is None:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            if owner_id != user_id:
+                raise ReportNotOwner
+            if persisted.status != ReportStatus.RESOLVED:
+                raise ReopenNotAllowed
+            if datetime.now(timezone.utc) - persisted.received_at > timedelta(days=30):
+                raise ReopenNotAllowed
+
+            reopened = PersistedReport(
+                id=persisted.id,
+                protocol=persisted.protocol,
+                received_at=persisted.received_at,
+                was_created=persisted.was_created,
+                status=ReportStatus.IN_PROGRESS,
+                triage_state=TriageState.CONFIRMED,
+            )
+            self._reports[report_id] = (owner_id, reopened)
+            self._append_event(
+                report_id,
+                "reaberto",
+                f"citizen:{user_id}",
+                reason,
+            )
+            return self.get_detail(report_id)
+
+    def flag_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str,
+        note: str | None,
+    ) -> None:
+        with self._lock:
+            if report_id not in self._reports:
+                raise ReportNotFound
+            flagged = self._flags.setdefault(report_id, set())
+            if user_id in flagged:
+                raise ReportAlreadyFlagged
+            flagged.add(user_id)
+            _, persisted = self._reports[report_id]
+            owner_id = self._reports[report_id][0]
+            self._reports[report_id] = (
+                owner_id,
+                PersistedReport(
+                    id=persisted.id,
+                    protocol=persisted.protocol,
+                    received_at=persisted.received_at,
+                    was_created=persisted.was_created,
+                    status=persisted.status,
+                    triage_state=TriageState.IN_MODERATION,
+                ),
+            )
+            justification = f"{reason}: {note}" if note else reason
+            self._append_event(
+                report_id,
+                "sinalizado",
+                f"citizen:{user_id}",
+                justification,
+            )
+
+    def nudge_report(self, report_id: UUID, user_id: int) -> None:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            if stored is None:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            if owner_id != user_id:
+                raise ReportNotOwner
+            deadline = self._deadlines.get(report_id)
+            nudges = self._nudges.setdefault(report_id, [])
+            if (
+                persisted.status not in {ReportStatus.FORWARDED, ReportStatus.IN_PROGRESS}
+                or deadline is None
+                or deadline >= datetime.now(timezone.utc)
+                or len(nudges) >= 3
+                or user_id in nudges
+            ):
+                raise NudgeNotAllowed
+            nudges.append(user_id)
+            self._append_event(
+                report_id,
+                "cobrado",
+                f"citizen:{user_id}",
+            )
+
+    def update_agency_status(
+        self,
+        report_id: UUID,
+        action: str,
+        deadline: datetime | None,
+        justification: str | None,
+    ) -> ReportDetail:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            if stored is None:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            if action == "in_progress":
+                if deadline is None:
+                    raise InvalidAgencyAction
+                status = ReportStatus.IN_PROGRESS
+                event_type = "em_andamento"
+                self._deadlines[report_id] = deadline
+            elif action == "resolved":
+                if not justification:
+                    raise InvalidAgencyAction
+                status = ReportStatus.RESOLVED
+                event_type = "resolvido"
+            elif action == "contest":
+                if not justification:
+                    raise InvalidAgencyAction
+                status = persisted.status
+                event_type = "contestado"
+            else:
+                raise InvalidAgencyAction
+
+            updated = PersistedReport(
+                id=persisted.id,
+                protocol=persisted.protocol,
+                received_at=persisted.received_at,
+                was_created=persisted.was_created,
+                status=status,
+                triage_state=persisted.triage_state,
+            )
+            self._reports[report_id] = (owner_id, updated)
+            self._append_event(
+                report_id,
+                event_type,
+                "agency",
+                justification,
+            )
+            return self.get_detail(report_id)
+
+    def list_moderation(self, limit: int) -> list[ReportSummary]:
+        with self._lock:
+            items = [
+                (report_id, persisted)
+                for report_id, (_, persisted) in self._reports.items()
+                if persisted.triage_state == TriageState.IN_MODERATION
+            ]
+            items.sort(
+                key=lambda item: self._report_inputs[item[0]].client_created_at,
+                reverse=True,
+            )
+            return [
+                self._summary_for(
+                    self._report_inputs[report_id],
+                    persisted,
+                    len(self._confirmations.get(report_id, set())),
+                )
+                for report_id, persisted in items[:limit]
+            ]
+
     def mark_for_moderation(self, report_id: UUID) -> None:
         with self._lock:
             stored = self._reports.get(report_id)
@@ -647,6 +924,219 @@ class InMemoryReportRepository:
                 )
                 for report_id, _, persisted in page
             ]
+
+    def export_user_data(self, user_id: int) -> dict[str, object]:
+        with self._lock:
+            report_ids = [
+                report_id
+                for report_id, (owner_id, _) in self._reports.items()
+                if owner_id == user_id
+            ]
+            reports: list[dict[str, object]] = []
+            for report_id in report_ids:
+                detail = self.get_detail(report_id)
+                comments = [
+                    {
+                        "id": comment.id,
+                        "content": comment.content,
+                        "created_at": comment.created_at.isoformat(),
+                    }
+                    for comment in self._comments.get(report_id, [])
+                    if comment.user_id == user_id
+                ]
+                reports.append(
+                    {
+                        "id": str(detail.summary.id),
+                        "protocol": detail.summary.protocol,
+                        "description": detail.description,
+                        "category": (
+                            detail.summary.category.value
+                            if detail.summary.category is not None
+                            else None
+                        ),
+                        "received_at": detail.summary.received_at.isoformat(),
+                        "status": detail.summary.status.value,
+                        "anonymous": detail.anonymous,
+                        "comments": comments,
+                    }
+                )
+            devices = [
+                {"push_token": token, "platform": platform}
+                for token, (owner_id, platform)
+                in self._notification_devices.items()
+                if owner_id == user_id
+            ]
+            return {
+                "user_id": user_id,
+                "reports": reports,
+                "notification_devices": devices,
+            }
+
+    def delete_user_data(self, user_id: int) -> None:
+        with self._lock:
+            for report_id, (owner_id, persisted) in list(self._reports.items()):
+                if owner_id == user_id:
+                    self._reports[report_id] = (0, persisted)
+                    self._comments[report_id] = [
+                        comment
+                        for comment in self._comments.get(report_id, [])
+                        if comment.user_id != user_id
+                    ]
+                    self._confirmations[report_id].discard(user_id)
+                    report_input = self._report_inputs[report_id]
+                    if report_input.anonymous:
+                        self._report_inputs[report_id] = NewReport(
+                            id=report_input.id,
+                            description=report_input.description,
+                            has_photo=report_input.has_photo,
+                            category=report_input.category,
+                            latitude=report_input.latitude,
+                            longitude=report_input.longitude,
+                            location_accuracy_m=report_input.location_accuracy_m,
+                            anonymous=True,
+                            client_created_at=report_input.client_created_at,
+                            correlation_id=report_input.correlation_id,
+                            user_id=None,
+                            requester_user_id=0,
+                        )
+            for push_token, (owner_id, _) in list(
+                self._notification_devices.items()
+            ):
+                if owner_id == user_id:
+                    self._notification_devices.pop(push_token, None)
+
+    def get_public_metrics(
+        self,
+        from_date: datetime | None,
+        to_date: datetime | None,
+        category: str | None,
+        agency_id: str | None,
+    ) -> dict[str, object]:
+        with self._lock:
+            selected: list[tuple[UUID, PersistedReport, NewReport]] = []
+            for report_id, (_, persisted) in self._reports.items():
+                report = self._report_inputs[report_id]
+                effective_category = (
+                    self._classifications[report_id].category
+                    if report_id in self._classifications
+                    else report.category
+                )
+                route = self._routes.get(report_id)
+                if from_date is not None and persisted.received_at < from_date:
+                    continue
+                if to_date is not None and persisted.received_at > to_date:
+                    continue
+                if category is not None:
+                    if effective_category is None:
+                        continue
+                    if effective_category.value != category:
+                        continue
+                if agency_id is not None:
+                    if route is None or route.agency_id != agency_id:
+                        continue
+                selected.append((report_id, persisted, report))
+
+            response_durations: list[float] = []
+            resolved_count = 0
+            by_agency: dict[str, list[tuple[UUID, PersistedReport]]] = {}
+            recurrence = sum(
+                1
+                for report_id, _, _ in selected
+                if len(self._confirmations.get(report_id, set())) > 0
+            )
+
+            for report_id, persisted, _ in selected:
+                if persisted.status == ReportStatus.RESOLVED:
+                    resolved_count += 1
+                    received = persisted.received_at
+                    resolved_at = next(
+                        (
+                            event.created_at
+                            for event in self._timeline.get(report_id, [])
+                            if event.type == "resolvido"
+                        ),
+                        received,
+                    )
+                    response_durations.append(
+                        max(0.0, (resolved_at - received).total_seconds()) / 3600
+                    )
+                route = self._routes.get(report_id)
+                if route is not None:
+                    by_agency.setdefault(route.agency_id, []).append(
+                        (report_id, persisted)
+                    )
+
+            agency_rows: list[dict[str, object]] = []
+            for current_agency_id, agency_reports in sorted(by_agency.items()):
+                if len(agency_reports) < 5:
+                    continue
+                route = next(
+                    self._routes[report_id]
+                    for report_id, _ in agency_reports
+                )
+                agency_resolved = sum(
+                    1
+                    for _, persisted in agency_reports
+                    if persisted.status == ReportStatus.RESOLVED
+                )
+                agency_durations = [
+                    max(
+                        0.0,
+                        (
+                            next(
+                                (
+                                    event.created_at
+                                    for event in self._timeline.get(report_id, [])
+                                    if event.type == "resolvido"
+                                ),
+                                persisted.received_at,
+                            )
+                            - persisted.received_at
+                        ).total_seconds(),
+                    )
+                    / 3600
+                    for report_id, persisted in agency_reports
+                    if persisted.status == ReportStatus.RESOLVED
+                ]
+                agency_rows.append(
+                    {
+                        "agency": {
+                            "id": route.agency_id,
+                            "name": route.agency_name,
+                        },
+                        "reports": len(agency_reports),
+                        "avg_response_hours": (
+                            round(sum(agency_durations) / len(agency_durations), 2)
+                            if agency_durations
+                            else None
+                        ),
+                        "resolution_rate": round(
+                            agency_resolved / len(agency_reports),
+                            4,
+                        ),
+                    }
+                )
+
+            total = len(selected)
+            return {
+                "period": {
+                    "from": from_date.date().isoformat() if from_date else None,
+                    "to": to_date.date().isoformat() if to_date else None,
+                },
+                "totals": {
+                    "reports": total,
+                    "avg_response_hours": (
+                        round(sum(response_durations) / len(response_durations), 2)
+                        if response_durations
+                        else None
+                    ),
+                    "resolution_rate": (
+                        round(resolved_count / total, 4) if total else None
+                    ),
+                    "recurrence": recurrence,
+                },
+                "by_agency": agency_rows,
+            }
 
     def _summary_for(
         self,
@@ -769,13 +1259,14 @@ class InMemoryReportRepository:
         report_id: UUID,
         event_type: str,
         actor: str,
+        justification: str | None = None,
     ) -> None:
         self._timeline[report_id].append(
             ReportTimelineEvent(
                 id=self._next_event_id,
                 type=event_type,
                 actor=actor,
-                justification=None,
+                justification=justification,
                 created_at=datetime.now(timezone.utc),
             )
         )
@@ -849,6 +1340,522 @@ class InMemoryReportRepository:
 class OracleReportRepository:
     def __init__(self, database: OracleDatabase) -> None:
         self._database = database
+
+    def reopen_report(self, report_id, user_id, reason):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    """
+                    SELECT user_id, received_at,
+                           NVL((
+                               SELECT type FROM (
+                                   SELECT type FROM report_events
+                                   WHERE report_id = :report_id
+                                     AND type IN ('recebido','encaminhado','em_andamento','resolvido','reaberto','contestado')
+                                   ORDER BY id DESC
+                               ) WHERE ROWNUM = 1
+                           ), 'recebido')
+                    FROM reports WHERE id = :report_id
+                    """,
+                    report_id=str(report_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ReportNotFound
+                if row[0] != user_id:
+                    raise ReportNotOwner
+                if row[2] != "resolvido":
+                    raise ReopenNotAllowed
+                if row[1] < datetime.now(timezone.utc) - timedelta(days=30):
+                    raise ReopenNotAllowed
+
+                cursor.execute(
+                    """
+                    INSERT INTO report_events
+                        (report_id, type, actor, justification)
+                    VALUES (:report_id, 'reaberto', :actor, :justification)
+                    """,
+                    report_id=str(report_id),
+                    actor=f"citizen:{user_id}",
+                    justification=reason,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+        return self.get_detail(report_id)
+
+    def flag_report(self, report_id, user_id, reason, note):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    "SELECT 1 FROM reports WHERE id = :report_id",
+                    report_id=str(report_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ReportNotFound
+                cursor.execute(
+                    """
+                    SELECT 1 FROM report_events
+                    WHERE report_id = :report_id
+                      AND type = 'sinalizado'
+                      AND actor = :actor
+                    """,
+                    report_id=str(report_id),
+                    actor=f"citizen:{user_id}",
+                )
+                if cursor.fetchone() is not None:
+                    raise ReportAlreadyFlagged
+                justification = f"{reason}: {note}" if note else reason
+                cursor.execute(
+                    """
+                    INSERT INTO report_events
+                        (report_id, type, actor, justification)
+                    VALUES (:report_id, 'sinalizado', :actor, :justification)
+                    """,
+                    report_id=str(report_id),
+                    actor=f"citizen:{user_id}",
+                    justification=justification,
+                )
+                cursor.execute(
+                    """
+                    UPDATE reports SET triage_state = 'in_moderation'
+                    WHERE id = :report_id
+                    """,
+                    report_id=str(report_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (actor_user_id, action, resource_type, resource_id, justification)
+                    VALUES (:actor, 'flag_report', 'report', :resource, :justification)
+                    """,
+                    actor=user_id,
+                    resource=str(report_id),
+                    justification=justification,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+
+    def nudge_report(self, report_id, user_id):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    """
+                    SELECT r.user_id,
+                           NVL((
+                               SELECT type FROM (
+                                   SELECT type FROM report_events
+                                   WHERE report_id = r.id
+                                   ORDER BY id DESC
+                               ) WHERE ROWNUM = 1
+                           ), 'recebido')
+                    FROM reports r WHERE r.id = :report_id
+                    """,
+                    report_id=str(report_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ReportNotFound
+                if row[0] != user_id:
+                    raise ReportNotOwner
+                if row[1] not in {"encaminhado", "em_andamento"}:
+                    raise NudgeNotAllowed
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM report_events
+                    WHERE report_id = :report_id
+                      AND type = 'cobrado'
+                      AND actor = :actor
+                    """,
+                    report_id=str(report_id),
+                    actor=f"citizen:{user_id}",
+                )
+                if int(cursor.fetchone()[0]) >= 3:
+                    raise NudgeNotAllowed
+                cursor.execute(
+                    """
+                    INSERT INTO report_events
+                        (report_id, type, actor)
+                    VALUES (:report_id, 'cobrado', :actor)
+                    """,
+                    report_id=str(report_id),
+                    actor=f"citizen:{user_id}",
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+
+    def update_agency_status(self, report_id, action, deadline, justification):
+        if action not in {"in_progress", "resolved", "contest"}:
+            raise InvalidAgencyAction
+        if action == "in_progress" and deadline is None:
+            raise InvalidAgencyAction
+        if action in {"resolved", "contest"} and not justification:
+            raise InvalidAgencyAction
+        event_type = {
+            "in_progress": "em_andamento",
+            "resolved": "resolvido",
+            "contest": "contestado",
+        }[action]
+
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    "SELECT 1 FROM reports WHERE id = :report_id",
+                    report_id=str(report_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ReportNotFound
+                cursor.execute(
+                    """
+                    INSERT INTO report_events
+                        (report_id, type, actor, justification, deadline)
+                    VALUES (:report_id, :event_type, 'agency', :justification, :deadline)
+                    """,
+                    report_id=str(report_id),
+                    event_type=event_type,
+                    justification=justification,
+                    deadline=deadline,
+                )
+                cursor.execute(
+                    """
+                    UPDATE reports
+                    SET triage_state = CASE
+                            WHEN :event_type = 'resolvido' THEN 'confirmed'
+                            ELSE triage_state
+                        END
+                    WHERE id = :report_id
+                    """,
+                    event_type=event_type,
+                    report_id=str(report_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (action, resource_type, resource_id, justification)
+                    VALUES ('agency_status', 'report', :resource, :justification)
+                    """,
+                    resource=str(report_id),
+                    justification=justification,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+        return self.get_detail(report_id)
+
+    def list_moderation(self, limit):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT r.id, r.protocol, r.category, r.lat, r.lon,
+                           r.received_at, r.group_id,
+                           NVL(g.confirmation_count, 0),
+                           NVL((
+                               SELECT type FROM (
+                                   SELECT type FROM report_events e
+                                   WHERE e.report_id = r.id
+                                   ORDER BY e.id DESC
+                               ) WHERE ROWNUM = 1
+                           ), 'recebido')
+                    FROM reports r
+                    JOIN report_groups g ON g.id = r.group_id
+                    WHERE r.triage_state = 'in_moderation'
+                       OR EXISTS (
+                           SELECT 1 FROM report_events e
+                           WHERE e.report_id = r.id
+                             AND e.type IN ('sinalizado','enviado_moderacao')
+                       )
+                    ORDER BY r.received_at DESC
+                    FETCH FIRST :limit ROWS ONLY
+                    """,
+                    limit=limit,
+                )
+                return [
+                    ReportSummary(
+                        id=UUID(row[0]),
+                        protocol=row[1],
+                        status=ReportStatus(row[8]) if row[8] in {status.value for status in ReportStatus} else ReportStatus.RECEIVED,
+                        category=ReportCategory(row[2]) if row[2] else None,
+                        latitude=float(row[3]),
+                        longitude=float(row[4]),
+                        received_at=row[5],
+                        group_id=str(row[6]),
+                        confirmation_count=int(row[7]),
+                    )
+                    for row in cursor.fetchall()
+                ]
+            finally:
+                cursor.close()
+
+    def export_user_data(self, user_id: int) -> dict[str, object]:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, protocol, description, category, lat, lon,
+                           received_at, triage_state
+                    FROM reports
+                    WHERE user_id = :user_id
+                       OR EXISTS (
+                           SELECT 1 FROM notification_links l
+                           WHERE l.report_id = reports.id
+                             AND l.user_id = :user_id
+                       )
+                    """,
+                    user_id=user_id,
+                )
+                reports = [
+                    {
+                        "id": row[0],
+                        "protocol": row[1],
+                        "description": row[2],
+                        "category": row[3],
+                        "latitude": float(row[4]),
+                        "longitude": float(row[5]),
+                        "received_at": row[6].isoformat(),
+                        "triage_state": row[7],
+                    }
+                    for row in cursor.fetchall()
+                ]
+                cursor.execute(
+                    """
+                    SELECT push_token, platform
+                    FROM notification_devices
+                    WHERE user_id = :user_id
+                    """,
+                    user_id=user_id,
+                )
+                devices = [
+                    {"push_token": row[0], "platform": row[1]}
+                    for row in cursor.fetchall()
+                ]
+                cursor.execute(
+                    """
+                    SELECT id, report_id, content, created_at
+                    FROM report_comments
+                    WHERE user_id = :user_id
+                    """,
+                    user_id=user_id,
+                )
+                comments = [
+                    {
+                        "id": int(row[0]),
+                        "report_id": row[1],
+                        "content": row[2],
+                        "created_at": row[3].isoformat(),
+                    }
+                    for row in cursor.fetchall()
+                ]
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (actor_user_id, action, resource_type)
+                    VALUES (:actor, 'export_user_data', 'account')
+                    """,
+                    actor=user_id,
+                )
+                connection.commit()
+                return {
+                    "user_id": user_id,
+                    "reports": reports,
+                    "comments": comments,
+                    "notification_devices": devices,
+                }
+            finally:
+                cursor.close()
+
+    def delete_user_data(self, user_id: int) -> None:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    "UPDATE reports SET user_id = NULL WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "UPDATE report_comments SET user_id = NULL WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "DELETE FROM confirmations WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "DELETE FROM notification_links WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "DELETE FROM notification_devices WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (actor_user_id, action, resource_type)
+                    VALUES (:actor, 'delete_user_data', 'account')
+                    """,
+                    actor=user_id,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+
+    def get_public_metrics(
+        self,
+        from_date: datetime | None,
+        to_date: datetime | None,
+        category: str | None,
+        agency_id: str | None,
+    ) -> dict[str, object]:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                parameters: dict[str, object] = {}
+                filters = ["1 = 1"]
+                if from_date is not None:
+                    filters.append("r.received_at >= :from_date")
+                    parameters["from_date"] = from_date
+                if to_date is not None:
+                    filters.append("r.received_at <= :to_date")
+                    parameters["to_date"] = to_date
+                if category is not None:
+                    filters.append("COALESCE(r.category, 'a_classificar') = :category")
+                    parameters["category"] = category
+                if agency_id is not None:
+                    filters.append(
+                        "EXISTS (SELECT 1 FROM report_events er "
+                        "WHERE er.report_id = r.id "
+                        "AND er.payload LIKE '%' || :agency_id || '%')"
+                    )
+                    parameters["agency_id"] = agency_id
+
+                filter_sql = " AND ".join(filters)
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COUNT(*) AS reports,
+                        AVG(CASE WHEN resolved.type = 'resolvido'
+                            THEN (resolved.created_at - r.received_at) * 24
+                            ELSE NULL END),
+                        AVG(CASE WHEN resolved.type = 'resolvido' THEN 1 ELSE 0 END),
+                        COUNT(DISTINCT CASE
+                            WHEN EXISTS (
+                                SELECT 1 FROM confirmations c
+                                JOIN report_groups g ON g.id = c.target_id
+                                WHERE g.canonical_report_id = r.id
+                            ) THEN r.id END)
+                    FROM reports r
+                    LEFT JOIN LATERAL (
+                        SELECT type, created_at
+                        FROM report_events
+                        WHERE report_id = r.id AND type = 'resolvido'
+                        ORDER BY id DESC
+                        FETCH FIRST 1 ROW ONLY
+                    ) resolved ON 1 = 1
+                    WHERE {filter_sql}
+                    """,
+                    **parameters,
+                )
+                row = cursor.fetchone()
+                total = int(row[0] or 0)
+                avg_hours = round(float(row[1]), 2) if row[1] is not None else None
+                resolution = round(float(row[2]), 4) if row[2] is not None else None
+                recurrence = int(row[3] or 0)
+
+                agency_parameters = dict(parameters)
+                cursor.execute(
+                    f"""
+                    SELECT agency_id, agency_name, COUNT(*) reports,
+                           AVG(resolved_hours), AVG(resolved_flag)
+                    FROM (
+                        SELECT r.id,
+                               rr.agency_id,
+                               a.name agency_name,
+                               CASE WHEN resolved.type = 'resolvido'
+                                    THEN (resolved.created_at - r.received_at) * 24
+                                    END resolved_hours,
+                               CASE WHEN resolved.type = 'resolvido' THEN 1 ELSE 0 END resolved_flag
+                        FROM reports r
+                        LEFT JOIN report_events rr
+                            ON rr.report_id = r.id
+                           AND rr.type = 'encaminhado'
+                        JOIN agencies a
+                          ON a.agency_id = JSON_VALUE(
+                              rr.payload,
+                              '$.agency_id'
+                              RETURNING VARCHAR2(64) NULL ON ERROR
+                          )
+                        LEFT JOIN LATERAL (
+                            SELECT type, created_at
+                            FROM report_events
+                            WHERE report_id = r.id AND type = 'resolvido'
+                            ORDER BY id DESC
+                            FETCH FIRST 1 ROW ONLY
+                        ) resolved ON 1 = 1
+                        WHERE {filter_sql}
+                    )
+                    GROUP BY agency_id, agency_name
+                    HAVING COUNT(*) >= 5
+                    ORDER BY agency_id
+                    """,
+                    **agency_parameters,
+                )
+                by_agency = [
+                    {
+                        "agency": {"id": row[0], "name": row[1]},
+                        "reports": int(row[2]),
+                        "avg_response_hours": (
+                            round(float(row[3]), 2) if row[3] is not None else None
+                        ),
+                        "resolution_rate": (
+                            round(float(row[4]), 4) if row[4] is not None else None
+                        ),
+                    }
+                    for row in cursor.fetchall()
+                ]
+                return {
+                    "period": {
+                        "from": from_date.date().isoformat() if from_date else None,
+                        "to": to_date.date().isoformat() if to_date else None,
+                    },
+                    "totals": {
+                        "reports": total,
+                        "avg_response_hours": avg_hours,
+                        "resolution_rate": resolution,
+                        "recurrence": recurrence,
+                    },
+                    "by_agency": by_agency,
+                }
+            finally:
+                cursor.close()
 
     def create(self, report: NewReport) -> PersistedReport:
         import oracledb
@@ -1669,6 +2676,115 @@ class OracleReportRepository:
 class OracleAuthRepository:
     def __init__(self, database: OracleDatabase) -> None:
         self._database = database
+
+    def get_user(self, user_id: int) -> AuthUser:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT email, role, consent_version, created_at
+                    FROM users
+                    WHERE id = :user_id AND deleted_at IS NULL
+                    """,
+                    user_id=user_id,
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise AccountNotFound
+                return AuthUser(
+                    id=user_id,
+                    email=row[0],
+                    role=row[1],
+                    consent_version=row[2],
+                    created_at=row[3],
+                )
+            finally:
+                cursor.close()
+
+    def update_email(self, user_id: int, email: str) -> AuthUser:
+        normalized_email = email.strip().lower()
+        import oracledb
+
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                try:
+                    cursor.execute(
+                        """
+                        UPDATE users
+                        SET email = :email
+                        WHERE id = :user_id AND deleted_at IS NULL
+                        """,
+                        email=normalized_email,
+                        user_id=user_id,
+                    )
+                    if cursor.rowcount != 1:
+                        raise AccountNotFound
+                    cursor.execute(
+                        """
+                        SELECT role, consent_version, created_at
+                        FROM users
+                        WHERE id = :user_id
+                        """,
+                        user_id=user_id,
+                    )
+                    row = cursor.fetchone()
+                    connection.commit()
+                    committed = True
+                    return AuthUser(
+                        id=user_id,
+                        email=normalized_email,
+                        role=row[0],
+                        consent_version=row[1],
+                        created_at=row[2],
+                    )
+                except oracledb.DatabaseError as error:
+                    oracle_error = error.args[0] if error.args else None
+                    if getattr(oracle_error, "code", None) == 1:
+                        raise GoogleAccountConflict from error
+                    raise
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+
+    def delete_account(self, user_id: int) -> None:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET deleted_at = SYSTIMESTAMP,
+                        email = NULL,
+                        google_sub = NULL
+                    WHERE id = :user_id AND deleted_at IS NULL
+                    """,
+                    user_id=user_id,
+                )
+                if cursor.rowcount != 1:
+                    raise AccountNotFound
+                cursor.execute(
+                    "DELETE FROM notification_links WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "DELETE FROM notification_devices WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                cursor.execute(
+                    "DELETE FROM refresh_tokens WHERE user_id = :user_id",
+                    user_id=user_id,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
 
     def request_otp(
         self,

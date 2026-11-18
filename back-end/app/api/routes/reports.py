@@ -12,7 +12,7 @@ from fastapi import (
     Response,
 )
 
-from app.api.auth import require_citizen
+from app.api.auth import require_agency_api_key, require_citizen
 from app.models.classification import TriageRequest
 from app.models.reports import (
     AgencyResponse,
@@ -30,6 +30,9 @@ from app.models.reports import (
     PhotoProcessingResponse,
     ReportSummaryResponse,
     ReportTimelineEventResponse,
+    ReopenReportRequest,
+    FlagReportRequest,
+    AgencyStatusRequest,
 )
 from app.infrastructure.repositories import (
     AlreadyConfirmed,
@@ -41,6 +44,10 @@ from app.infrastructure.repositories import (
     ReportPhotoConflict,
     ReportPhotoNotEnabled,
     TriageConflict,
+    ReopenNotAllowed,
+    NudgeNotAllowed,
+    ReportAlreadyFlagged,
+    InvalidAgencyAction,
 )
 from app.infrastructure.photo_storage import (
     InvalidPhoto,
@@ -417,3 +424,55 @@ def confirm_report(
         ) from error
 
     return ReportConfirmationResponse(confirmation_count=count)
+
+
+@router.post("/{report_id}/reopen", response_model=ReportDetailResponse)
+def reopen_report(
+    report_id: UUID,
+    payload: ReopenReportRequest,
+    user_id: int = Depends(require_citizen),
+    service: ReportService = Depends(get_report_service),
+    photos: PhotoService = Depends(get_photo_service),
+) -> ReportDetailResponse:
+    try:
+        detail = service.reopen_report(report_id, user_id, payload.reason)
+    except ReportNotFound as error:
+        raise HTTPException(status_code=404, detail="Reporte não encontrado.") from error
+    except ReportNotOwner as error:
+        raise HTTPException(status_code=403, detail="Somente o solicitante pode reabrir.") from error
+    except ReopenNotAllowed as error:
+        raise HTTPException(status_code=409, detail="A janela de reabertura expirou ou o reporte não está resolvido.") from error
+    return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+@router.post("/{report_id}/flag", status_code=202)
+def flag_report(
+    report_id: UUID,
+    payload: FlagReportRequest,
+    user_id: int = Depends(require_citizen),
+    service: ReportService = Depends(get_report_service),
+) -> dict[str, str]:
+    try:
+        service.flag_report(report_id, user_id, payload.reason, payload.note)
+    except ReportNotFound as error:
+        raise HTTPException(status_code=404, detail="Reporte não encontrado.") from error
+    except ReportAlreadyFlagged as error:
+        raise HTTPException(status_code=409, detail="Você já sinalizou este reporte.") from error
+    return {"status": "received"}
+
+
+@router.post("/{report_id}/nudge", status_code=202)
+def nudge_report(
+    report_id: UUID,
+    user_id: int = Depends(require_citizen),
+    service: ReportService = Depends(get_report_service),
+) -> dict[str, str]:
+    try:
+        service.nudge_report(report_id, user_id)
+    except ReportNotFound as error:
+        raise HTTPException(status_code=404, detail="Reporte não encontrado.") from error
+    except ReportNotOwner as error:
+        raise HTTPException(status_code=403, detail="Somente o solicitante pode cobrar.") from error
+    except NudgeNotAllowed as error:
+        raise HTTPException(status_code=409, detail="Cobrança não permitida ou limite atingido.") from error
+    return {"status": "nudge_registered"}

@@ -100,6 +100,21 @@ class ReportConfirmationResponse(BaseModel):
     confirmation_count: int
 
 
+class ReopenReportRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class FlagReportRequest(BaseModel):
+    reason: str = Field(pattern="^(ofensivo|dados_pessoais|falso|duplicado_abusivo|outro)$")
+    note: str | None = Field(default=None, max_length=500)
+
+
+class AgencyStatusRequest(BaseModel):
+    action: str = Field(pattern="^(in_progress|resolved|contest)$")
+    deadline: datetime | None = None
+    justification: str | None = Field(default=None, max_length=1000)
+
+
 class ReportSummaryResponse(BaseModel):
     id: UUID
     protocol: str

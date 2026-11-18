@@ -139,6 +139,43 @@ class ReportService:
     def confirm(self, report_id: UUID, user_id: int) -> int:
         return self._repository.confirm(report_id, user_id)
 
+    def reopen_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str | None,
+    ) -> ReportDetail:
+        return self._repository.reopen_report(report_id, user_id, reason)
+
+    def flag_report(
+        self,
+        report_id: UUID,
+        user_id: int,
+        reason: str,
+        note: str | None,
+    ) -> None:
+        self._repository.flag_report(report_id, user_id, reason, note)
+
+    def nudge_report(self, report_id: UUID, user_id: int) -> None:
+        self._repository.nudge_report(report_id, user_id)
+
+    def update_agency_status(
+        self,
+        report_id: UUID,
+        action: str,
+        deadline: datetime | None,
+        justification: str | None,
+    ) -> ReportDetail:
+        return self._repository.update_agency_status(
+            report_id,
+            action,
+            deadline,
+            justification,
+        )
+
+    def list_moderation(self, limit: int) -> list[ReportSummary]:
+        return self._repository.list_moderation(limit)
+
     def _validate_client_timestamp(self, client_created_at: datetime) -> None:
         now = self._clock()
         if now.utcoffset() is None:

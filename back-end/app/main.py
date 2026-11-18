@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -10,6 +11,8 @@ from app.api.middleware import correlation_id_middleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.api.routes.me import router as me_router
+from app.api.routes.analytics import router as analytics_router
+from app.api.routes.moderation import router as moderation_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.uploads import photos_router, router as uploads_router
 from app.core.config import settings
@@ -33,6 +36,9 @@ from app.services.notification_service import (
 )
 from app.services.photo_service import PhotoService
 from app.services.report_service import ReportService
+from app.services.privacy_service import PrivacyService
+from app.services.analytics_service import AnalyticsService
+from app.services.visual_verification_service import VisualVerificationService
 from app.infrastructure.worker import ReportJobWorker
 
 
@@ -72,6 +78,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+        "http://localhost:8000",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Correlation-ID"],
+)
+
 app.middleware("http")(correlation_id_middleware)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(StarletteHTTPException, http_error_handler)
@@ -101,6 +119,10 @@ app.state.citizen_notification_service = CitizenNotificationService(
     report_repository,
     build_push_sender(settings),
 )
+app.state.visual_verification_service = VisualVerificationService(
+    settings.visual_verification_enabled,
+    settings.visual_verification_provider,
+)
 app.state.report_worker = ReportJobWorker(
     job_queue,
     report_repository,
@@ -108,8 +130,11 @@ app.state.report_worker = ReportJobWorker(
     photo_storage=photo_storage,
     notification_service=app.state.notification_service,
     citizen_notification_service=app.state.citizen_notification_service,
+    visual_verification_service=app.state.visual_verification_service,
 )
 app.state.auth_service = AuthService(auth_repository, SmtpOtpMailer(settings))
+app.state.privacy_service = PrivacyService(auth_repository, report_repository)
+app.state.analytics_service = AnalyticsService(report_repository)
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -117,6 +142,8 @@ app.include_router(reports_router)
 app.include_router(uploads_router)
 app.include_router(photos_router)
 app.include_router(me_router)
+app.include_router(analytics_router)
+app.include_router(moderation_router)
 
 
 @app.get("/health", tags=["public"])

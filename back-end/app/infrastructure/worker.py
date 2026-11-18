@@ -23,6 +23,7 @@ from app.services.notification_service import (
     CitizenNotificationService,
 )
 from app.services.photo_service import PhotoService
+from app.services.visual_verification_service import VisualVerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class ReportJobWorker:
         photo_storage: LocalPhotoStorage | None = None,
         notification_service: AgencyNotificationService | None = None,
         citizen_notification_service: CitizenNotificationService | None = None,
+        visual_verification_service: VisualVerificationService | None = None,
     ) -> None:
         self._queue = queue
         self._repository = repository
@@ -48,6 +50,7 @@ class ReportJobWorker:
         self._photo_storage = photo_storage
         self._notification_service = notification_service
         self._citizen_notification_service = citizen_notification_service
+        self._visual_verification_service = visual_verification_service
         self._worker_id = worker_id or f"{socket.gethostname()}:{uuid4()}"
         self._poll_seconds = (
             settings.report_job_poll_seconds
@@ -83,6 +86,14 @@ class ReportJobWorker:
                 )
                 result = self._classification_service.classify(classification_input)
                 self._repository.record_classification(job.report_id, result)
+            elif job.stage == "verify_visual":
+                if self._visual_verification_service is None:
+                    raise RuntimeError(
+                        "Serviço de verificação visual não está configurado."
+                    )
+                decision = self._visual_verification_service.verify()
+                if not decision.approved:
+                    raise RuntimeError(decision.audit_reason)
             elif job.stage == "process_photo" and self._photo_storage is not None:
                 photo_key = self._photo_storage.process_upload(job.report_id)
                 self._repository.set_photo_key(job.report_id, photo_key)
@@ -121,7 +132,7 @@ class ReportJobWorker:
             )
             if (
                 exhausted
-                and job.stage in {"classificar", "notify_agency"}
+                and job.stage in {"classificar", "notify_agency", "verify_visual"}
                 and not self._queue.handles_terminal_failure
             ):
                 self._repository.mark_for_moderation(job.report_id)
@@ -162,6 +173,10 @@ def main() -> None:
             photo_storage=photo_storage,
             notification_service=notification_service,
             citizen_notification_service=citizen_notification_service,
+            visual_verification_service=VisualVerificationService(
+                settings.visual_verification_enabled,
+                settings.visual_verification_provider,
+            ),
         )
         logger.info("Worker de reportes iniciado.")
         worker.run_forever()

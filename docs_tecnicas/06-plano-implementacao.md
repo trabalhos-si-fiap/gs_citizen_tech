@@ -17,6 +17,34 @@ depois das verificações de segurança.
 3. **Organização da infraestrutura:** módulos soltos foram agrupados em
    [`back-end/app/infrastructure/`](../back-end/app/infrastructure/).
 
+4. **LGPD e analítica em memória:** exportação, correção, exclusão, métricas
+   públicas agregadas e CSV foram conectados à API. A auditoria de operações
+   foi adicionada ao schema/migração. Consultas Oracle completas permanecem
+   dependentes da compilação dos packages da etapa 7.
+5. **Ações do reporte:** reabertura, cobrança limitada, sinalização,
+   atualização pelo órgão e fila de moderação estão implementadas no
+   repositório de desenvolvimento, com testes.
+6. **Integração e operação:** o app foi preparado para exportação/exclusão pela
+   API, o painel web consome indicadores públicos, CORS foi configurado e
+   Docker Compose, Dockerfile, CI e runbook foram adicionados.
+
+7. **Ações Oracle:** reabertura, cobrança, sinalização, atualização pelo órgão
+   e fila de moderação têm implementação persistente direta por SQL com
+   transação e auditoria.
+8. **LGPD Oracle:** exportação, anonimização de vínculo, exclusão de dispositivos
+   e confirmações, métricas agregadas e limiar mínimo de cinco registros por
+   órgão têm implementação persistente direta.
+9. **Gate visual:** o worker aceita uma etapa `verify_visual` que só conclui
+   quando um verificador aprova a imagem; desativado ou sem provedor aprovado,
+   o resultado é recusado e o reporte pode seguir para moderação.
+10. **Validação automática concluída:** o backend compila e 84 testes unitários
+    passam, incluindo API, autenticação, reportes, notificações, LGPD,
+    analítica, ações de moderação e gate visual.
+11. **Integração Flutter iniciada:** OTP real por API, armazenamento do access
+    token em memória e criação de reporte sem foto pela API foram conectados.
+    Upload assinado, refresh rotativo persistente no app, push, polling offline
+    e sincronização por outbox continuam pendentes.
+
 O desfoque de rostos e placas ainda é um no-op documentado. Não há classificação
 de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA.
 
@@ -59,6 +87,10 @@ de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA
   RT-37).
 - **Aceite:** testes cobrem autorização, janelas, idempotência, limites e
   transições inválidas; eventos e projeções continuam consistentes.
+- **Estado atual:** implementação em memória concluída e coberta por testes;
+  persistência Oracle de reabertura, cobrança, sinalização, status do órgão,
+  auditoria e fila de moderação foi conectada aos métodos da API. Compilação e
+  validação concorrente em Oracle real permanecem pendentes.
 
 ### 6. LGPD e analítica
 
@@ -74,6 +106,10 @@ de imagem, análise de conteúdo impróprio nem detector de imagem gerada por IA
 - **Aceite:** exportação e exclusão verificadas ponta a ponta; consultas
   analíticas reproduzíveis com dados sintéticos; células abaixo do limiar não
   são expostas.
+- **Estado atual:** exportação, correção, exclusão, auditoria, JSON/CSV e
+  agregações com limiar mínimo estão implementados no backend de memória;
+  métodos Oracle equivalentes foram conectados. Falta validar pacote e migração
+  em Oracle real.
 
 ### Verificações de imagem e classificação visual
 
@@ -90,6 +126,8 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
 - **Aceite:** testes provam que conteúdo reprovado não chega ao classificador,
   falhas dos verificadores não geram aprovação automática e os resultados
   visuais podem ser auditados.
+- **Estado atual:** gate fail-closed implementado no worker e coberto por
+  testes. Nenhum provedor externo está habilitado por padrão.
 
 ### 7. Validação Oracle real
 
@@ -107,6 +145,16 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
 
 ## Lacunas transversais do projeto
 
+### Pendências externas, não cobertas por implementação local
+
+- Compilar e executar schema, migrações V004/V005, packages e `DBMS_SCHEDULER`
+  em Oracle real.
+- Validar SMTP real no MailHog/ambiente homologado e credenciais FCM Firebase.
+- Habilitar verificadores visuais somente após decisão jurídica/produtiva e
+  integração de um provedor aprovado.
+- Concluir autenticação institucional do painel web, que permanece fora desta
+  fase de backend.
+
 - **Contrato da API:** comparar `04-openapi.yaml` com as rotas reais e
   implementar ou retirar do contrato rotas ainda ausentes, incluindo
   proximidade, ações do reporte, dispositivos, exportação/exclusão, agência e
@@ -118,6 +166,9 @@ Executar esta etapa **somente depois das etapas 4, 5 e 6**, conforme solicitado.
   autenticação, upload assinado, triagem e acompanhamento; finalizar
   outbox/offline, retries e sincronização sem perda/duplicidade. As telas
   existentes não substituem os testes de integração contra a API.
+- **Estado atual:** o cliente HTTP compartilha LGPD/exportação/exclusão e
+  métricas públicas. Login, upload assinado, triagem, push e outbox permanecem
+  em integração.
 - **Painéis:** o diretório `web/` ainda não constitui os painéis descritos na
   especificação; priorizar protótipo público e do órgão após a API de ações e
   indicadores.

@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.api.auth import require_citizen
+from app.models.auth import DeleteAccountResponse, UpdateMeRequest, UserResponse
 from app.models.notifications import RegisterDeviceRequest
 from app.models.reports import (
     ReportStatus,
@@ -14,6 +15,8 @@ from app.models.reports import (
 from app.infrastructure.repositories import InvalidReportCursor
 from app.services.notification_service import CitizenNotificationService
 from app.services.report_service import ReportService
+from app.services.privacy_service import PrivacyService
+from app.infrastructure.repositories import AccountNotFound, GoogleAccountConflict
 
 router = APIRouter(prefix="/v1/me", tags=["me"])
 
@@ -26,6 +29,72 @@ def get_citizen_notification_service(
     request: Request,
 ) -> CitizenNotificationService:
     return request.app.state.citizen_notification_service
+
+
+def get_privacy_service(request: Request) -> PrivacyService:
+    return request.app.state.privacy_service
+
+
+@router.get("", response_model=UserResponse)
+def get_account(
+    user_id: int = Depends(require_citizen),
+    service: PrivacyService = Depends(get_privacy_service),
+) -> UserResponse:
+    try:
+        account = service.get_account(user_id)
+    except AccountNotFound as error:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.") from error
+    return UserResponse(
+        id=str(account.id),
+        email=account.email,
+        role=account.role,
+        consent_version=account.consent_version,
+        created_at=account.created_at,
+    )
+
+
+@router.patch("", response_model=UserResponse)
+def update_account(
+    payload: UpdateMeRequest,
+    user_id: int = Depends(require_citizen),
+    service: PrivacyService = Depends(get_privacy_service),
+) -> UserResponse:
+    try:
+        account = service.update_email(user_id, str(payload.email))
+    except AccountNotFound as error:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.") from error
+    except GoogleAccountConflict as error:
+        raise HTTPException(status_code=409, detail="Este e-mail já está associado a outra conta.") from error
+    return UserResponse(
+        id=str(account.id),
+        email=account.email,
+        role=account.role,
+        consent_version=account.consent_version,
+        created_at=account.created_at,
+    )
+
+
+@router.get("/export")
+def export_account_data(
+    user_id: int = Depends(require_citizen),
+    service: PrivacyService = Depends(get_privacy_service),
+) -> dict[str, object]:
+    try:
+        return service.export_data(user_id)
+    except AccountNotFound as error:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.") from error
+
+
+@router.delete("", status_code=202, response_model=DeleteAccountResponse)
+def delete_account(
+    user_id: int = Depends(require_citizen),
+    service: PrivacyService = Depends(get_privacy_service),
+) -> DeleteAccountResponse:
+    try:
+        service.delete_account(user_id)
+    except AccountNotFound as error:
+        raise HTTPException(status_code=404, detail="Conta não encontrada.") from error
+    return DeleteAccountResponse()
 
 
 @router.put("/devices", status_code=204)

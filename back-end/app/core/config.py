@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     report_job_poll_seconds: float = Field(default=1.0, gt=0)
     report_job_lease_seconds: int = Field(default=90, gt=0)
     report_job_max_attempts: int = Field(default=6, gt=0)
+    agency_api_keys: str = ""
+    visual_verification_enabled: bool = False
+    visual_verification_provider: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
