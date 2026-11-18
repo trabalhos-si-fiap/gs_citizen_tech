@@ -95,6 +95,38 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(detail.triage_state, TriageState.AWAITING_USER)
         self.assertFalse(worker.run_once())
 
+    def test_classification_is_followed_by_deduplication(self) -> None:
+        repository = InMemoryReportRepository()
+        report = NewReport(
+            id=uuid4(),
+            description="Vazamento de esgoto na rua.",
+            has_photo=False,
+            category=None,
+            latitude=-23.55,
+            longitude=-46.63,
+            location_accuracy_m=None,
+            anonymous=False,
+            client_created_at=self.now,
+            correlation_id=uuid4(),
+            user_id=11,
+            requester_user_id=11,
+        )
+        repository.create(report)
+        self.queue.enqueue(report.id, "classificar")
+        deduplicator = Mock(return_value=False)
+        worker = ReportJobWorker(
+            self.queue,
+            repository,
+            ClassificationService(FakeClassifier()),
+            worker_id="test-worker",
+            deduplicator=deduplicator,
+        )
+
+        worker.run_once()
+
+        deduplicator.assert_called_once_with(report.id)
+        self.assertIsNotNone(repository.get_detail(report.id).classification)
+
     def test_terminal_failure_sends_report_to_moderation(self) -> None:
         report_id = uuid4()
         self.queue.enqueue(report_id, "classificar")

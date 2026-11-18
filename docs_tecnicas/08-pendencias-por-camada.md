@@ -42,10 +42,18 @@ as telas mobile e os componentes Angular.
   e distância são calculados sobre elas, para que não seja possível trilaterar a
   posição exata. Reportes em moderação ficam fora. Limite conhecido: no máximo
   1000 candidatos por consulta (os mais recentes), suficiente para o raio máximo.
-- [ ] **Conectar o agrupamento automático de duplicados.** `report_groups` e
-  confirmações existem, mas reportes novos são criados sem uma busca/decisão
-  completa de correspondência por distância, categoria e janela temporal.
-  Definir limites configuráveis e conservar um reporte canônico.
+- [x] **Conectar o agrupamento automático de duplicados.** Após classificar,
+  o worker procura reportes de outros grupos abertos (não resolvidos nem em
+  moderação) com a mesma categoria/subcategoria, a menos de
+  `DEDUP_RADIUS_METERS` (50) e criados em `DEDUP_WINDOW_DAYS` (14). Com texto
+  nos dois, exige semelhança de trigramas ≥ `DEDUP_TEXT_SIMILARITY` (0,80);
+  sem texto em um deles, distância menor que metade do raio. O vínculo
+  (`PKG_DEDUP.vincular`) move o reporte e as confirmações para o grupo,
+  encerra a triagem dele (`vinculado_grupo`, estado `auto_confirmed`) e o
+  membro passa a herdar status, órgão e prazo do reporte canônico; só o
+  canônico é encaminhado. Pendentes: comparação de imagem (pHash), push aos
+  membros quando o status do canônico muda (hoje eles veem por consulta) e
+  calibrar os limites com dados do piloto.
 - [x] **Automatizar a confirmação/triagem pendente.** O worker varre a cada
   `TRIAGE_SWEEP_INTERVAL_SECONDS` (60) os reportes classificados há mais de
   `TRIAGE_AUTO_CONFIRM_MINUTES` (10) ainda sem resposta do cidadão e aplica a
@@ -251,6 +259,15 @@ ainda não iniciado.
   versionado sem relação com o projeto; confirmar e remover do git.
 
 ### Backend e banco
+
+- [x] **Atualizações bloqueadas no Oracle:** o gatilho da V005 impedia
+  qualquer `UPDATE` em `reports` além da anonimização, quebrando sinalização,
+  status do órgão e conclusão de foto (ORA-20100). A V007 mantém o conteúdo
+  imutável e libera só os campos operacionais. Sinalização e status do órgão
+  também falhavam pelo bind `:resource` (palavra reservada, ORA-01745).
+- [ ] **Migração inválida fica registrada:** o executor grava a versão antes
+  de validar os objetos PL/SQL; uma migração com erro de compilação fica
+  marcada como aplicada. Validar por script antes de registrar.
 
 - [ ] **Fuso horário em `received_at`:** o Oracle devolve as datas sem fuso
   (ex.: `2026-11-18T17:38:20`) em todas as rotas de leitura; normalizar para

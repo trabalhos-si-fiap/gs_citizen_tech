@@ -76,7 +76,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
           AND type IN (
               'classificacao_confirmada',
               'classificacao_corrigida',
-              'enviado_moderacao'
+              'enviado_moderacao',
+              'vinculado_grupo'
           );
         IF v_exists > 0 THEN
             RAISE_APPLICATION_ERROR(-20043, 'Triagem já concluída');

@@ -19,6 +19,7 @@ from app.models.classification import (
     RouteDecision,
 )
 from app.models.reports import (
+    DedupCandidate,
     ClientTimestampOutOfRange,
     ReportCategory,
     NewReport,
@@ -224,6 +225,27 @@ class ReportRepository(Protocol):
 
     def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
         """Reportes classificados até `cutoff` que ainda aguardam o cidadão."""
+        ...
+
+    def list_dedup_candidates(
+        self,
+        report_id: UUID,
+        box: GeoBox,
+        since: datetime,
+        max_items: int,
+    ) -> list[DedupCandidate]:
+        """Reportes de outros grupos abertos no retângulo, criados desde `since`."""
+        ...
+
+    def link_to_group(
+        self,
+        report_id: UUID,
+        group_id: str,
+        *,
+        similarity: float,
+        distance_m: float,
+    ) -> None:
+        """Move o reporte para o grupo; TriageConflict se a triagem já terminou."""
         ...
 
 
@@ -514,9 +536,11 @@ class InMemoryReportRepository:
         self._notification_devices: dict[str, tuple[int, str]] = {}
         self._nudges: dict[UUID, list[int]] = {}
         self._flags: dict[UUID, set[int]] = {}
+        # Reporte membro -> reporte canônico do grupo (ausente = é o próprio canônico).
+        self._canonical_of: dict[UUID, UUID] = {}
         self._next_comment_id = 1
         self._next_event_id = 1
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # reentrante: update_agency_status chama get_detail
 
     def create(self, report: NewReport) -> PersistedReport:
         with self._lock:
@@ -1177,10 +1201,12 @@ class InMemoryReportRepository:
         persisted: PersistedReport,
         confirmation_count: int,
     ) -> ReportSummary:
+        canonical_id = self._canonical_of.get(report.id, report.id)
         return ReportSummary(
             id=report.id,
             protocol=persisted.protocol,
-            status=persisted.status,
+            # Membros de um grupo herdam o status do reporte canônico.
+            status=self._reports[canonical_id][1].status,
             category=(
                 self._classifications[report.id].category
                 if report.id in self._classifications
@@ -1189,7 +1215,7 @@ class InMemoryReportRepository:
             latitude=report.latitude,
             longitude=report.longitude,
             received_at=persisted.received_at,
-            group_id=str(report.id),
+            group_id=str(canonical_id),
             confirmation_count=confirmation_count,
         )
 
@@ -1223,6 +1249,98 @@ class InMemoryReportRepository:
                 report_id,
                 "classificado",
                 "system",
+            )
+
+    def _effective_category(self, report_id: UUID) -> ReportCategory | None:
+        if report_id in self._classifications:
+            return self._classifications[report_id].category
+        return self._report_inputs[report_id].category
+
+    def list_dedup_candidates(
+        self,
+        report_id: UUID,
+        box: GeoBox,
+        since: datetime,
+        max_items: int,
+    ) -> list[DedupCandidate]:
+        with self._lock:
+            own_group = self._canonical_of.get(report_id, report_id)
+            candidates = []
+            for other_id, (_, persisted) in self._reports.items():
+                canonical_id = self._canonical_of.get(other_id, other_id)
+                canonical = self._reports[canonical_id][1]
+                report = self._report_inputs[other_id]
+                if (
+                    canonical_id == own_group
+                    or persisted.received_at < since
+                    or not box.contains(report.latitude, report.longitude)
+                    or canonical.status == ReportStatus.RESOLVED
+                    or TriageState.IN_MODERATION
+                    in (persisted.triage_state, canonical.triage_state)
+                ):
+                    continue
+                classification = self._classifications.get(other_id)
+                candidates.append(
+                    (
+                        persisted.received_at,
+                        DedupCandidate(
+                            report_id=other_id,
+                            group_id=str(canonical_id),
+                            latitude=report.latitude,
+                            longitude=report.longitude,
+                            description=report.description,
+                            category=self._effective_category(other_id),
+                            subcategory=classification.subcategory
+                            if classification
+                            else None,
+                        ),
+                    )
+                )
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            return [candidate for _, candidate in candidates[:max_items]]
+
+    def link_to_group(
+        self,
+        report_id: UUID,
+        group_id: str,
+        *,
+        similarity: float,
+        distance_m: float,
+    ) -> None:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            canonical_id = UUID(group_id)
+            if stored is None or canonical_id not in self._reports:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            if persisted.triage_state != TriageState.AWAITING_USER:
+                raise TriageConflict
+            self._canonical_of[report_id] = canonical_id
+            self._reports[report_id] = (
+                owner_id,
+                PersistedReport(
+                    id=persisted.id,
+                    protocol=persisted.protocol,
+                    received_at=persisted.received_at,
+                    was_created=persisted.was_created,
+                    status=persisted.status,
+                    triage_state=TriageState.AUTO_CONFIRMED,
+                ),
+            )
+            self._append_event(
+                report_id,
+                "vinculado_grupo",
+                "system",
+                f"grupo {group_id}; semelhança {similarity:.2f}; {distance_m:.0f} m",
+            )
+
+    def group_member_count(self, group_id: str) -> int:
+        with self._lock:
+            canonical_id = UUID(group_id)
+            return sum(
+                1
+                for report_id in self._reports
+                if self._canonical_of.get(report_id, report_id) == canonical_id
             )
 
     def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
@@ -1491,10 +1609,10 @@ class OracleReportRepository:
                     """
                     INSERT INTO audit_log
                         (actor_user_id, action, resource_type, resource_id, justification)
-                    VALUES (:actor, 'flag_report', 'report', :resource, :justification)
+                    VALUES (:actor, 'flag_report', 'report', :resource_id, :justification)
                     """,
                     actor=user_id,
-                    resource=str(report_id),
+                    resource_id=str(report_id),
                     justification=justification,
                 )
                 connection.commit()
@@ -1608,9 +1726,9 @@ class OracleReportRepository:
                     """
                     INSERT INTO audit_log
                         (action, resource_type, resource_id, justification)
-                    VALUES ('agency_status', 'report', :resource, :justification)
+                    VALUES ('agency_status', 'report', :resource_id, :justification)
                     """,
-                    resource=str(report_id),
+                    resource_id=str(report_id),
                     justification=justification,
                 )
                 connection.commit()
@@ -1633,7 +1751,7 @@ class OracleReportRepository:
                            NVL((
                                SELECT type FROM (
                                    SELECT type FROM report_events e
-                                   WHERE e.report_id = r.id
+                                   WHERE e.report_id = g.canonical_report_id
                                    ORDER BY e.id DESC
                                ) WHERE ROWNUM = 1
                            ), 'recebido')
@@ -2028,11 +2146,13 @@ class OracleReportRepository:
                            r.has_photo,
                            r.triage_state,
                            r.group_id,
-                           report_groups.confirmation_count
+                           report_groups.confirmation_count,
+                           report_groups.canonical_report_id
                     FROM reports r
                     JOIN report_groups ON report_groups.id = r.group_id
                     LEFT JOIN latest_status
-                        ON latest_status.report_id = r.id
+                        -- Membros de um grupo herdam o status do canônico.
+                        ON latest_status.report_id = report_groups.canonical_report_id
                        AND latest_status.row_number = 1
                     WHERE r.id = :report_id
                     """,
@@ -2071,7 +2191,8 @@ class OracleReportRepository:
                           'classificacao_confirmada',
                           'classificacao_corrigida',
                           'encaminhado',
-                          'enviado_moderacao'
+                          'enviado_moderacao',
+                          'vinculado_grupo'
                       )
                     ORDER BY id
                     """,
@@ -2105,6 +2226,26 @@ class OracleReportRepository:
                         deadline = event_deadline
                     elif event_type == "enviado_moderacao":
                         triage_state = TriageState.IN_MODERATION
+                    elif event_type == "vinculado_grupo":
+                        triage_state = TriageState.AUTO_CONFIRMED
+
+                canonical_id = row[13]
+                if agency_id is None and canonical_id != row[0]:
+                    # Membro do grupo: órgão e prazo vêm do encaminhamento do canônico.
+                    cursor.execute(
+                        """
+                        SELECT payload, deadline FROM report_events
+                        WHERE report_id = :canonical_id AND type = 'encaminhado'
+                        ORDER BY id DESC FETCH FIRST 1 ROW ONLY
+                        """,
+                        canonical_id=canonical_id,
+                    )
+                    forwarded = cursor.fetchone()
+                    if forwarded is not None:
+                        forwarded_data = self._decode_event_payload(forwarded[0])
+                        agency_id = forwarded_data.get("agency_id")
+                        agency_name = forwarded_data.get("agency_name")
+                        deadline = forwarded[1]
 
                 return ReportDetail(
                     summary=ReportSummary(
@@ -2422,7 +2563,7 @@ class OracleReportRepository:
                            r.protocol,
                            CASE (
                                SELECT e.type FROM report_events e
-                               WHERE e.report_id = r.id
+                               WHERE e.report_id = NVL(g.canonical_report_id, r.id)
                                  AND e.type IN (
                                      'recebido', 'encaminhado', 'em_andamento',
                                      'resolvido', 'reaberto'
@@ -2586,7 +2727,7 @@ class OracleReportRepository:
                         JOIN report_groups
                             ON report_groups.id = r.group_id
                         LEFT JOIN latest_status
-                            ON latest_status.report_id = r.id
+                            ON latest_status.report_id = report_groups.canonical_report_id
                            AND latest_status.row_number = 1
                         WHERE notification_links.user_id = :user_id
                     )
@@ -2773,6 +2914,117 @@ class OracleReportRepository:
                 if not committed:
                     connection.rollback()
 
+    def list_dedup_candidates(
+        self,
+        report_id: UUID,
+        box: GeoBox,
+        since: datetime,
+        max_items: int,
+    ) -> list[DedupCandidate]:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT r.id, r.group_id, r.lat, r.lon, r.description,
+                           COALESCE(
+                               (
+                                   SELECT JSON_VALUE(e.payload, '$.category'
+                                       RETURNING VARCHAR2(32) NULL ON ERROR)
+                                   FROM report_events e
+                                   WHERE e.report_id = r.id
+                                     AND e.type IN ('classificado', 'classificacao_confirmada', 'classificacao_corrigida')
+                                   ORDER BY e.id DESC FETCH FIRST 1 ROW ONLY
+                               ),
+                               r.category
+                           ),
+                           (
+                               SELECT JSON_VALUE(e.payload, '$.subcategory'
+                                   RETURNING VARCHAR2(64) NULL ON ERROR)
+                               FROM report_events e
+                               WHERE e.report_id = r.id
+                                 AND e.type IN ('classificado', 'classificacao_confirmada', 'classificacao_corrigida')
+                               ORDER BY e.id DESC FETCH FIRST 1 ROW ONLY
+                           )
+                    FROM reports r
+                    JOIN report_groups g ON g.id = r.group_id
+                    WHERE r.lat BETWEEN :min_lat AND :max_lat
+                      AND r.lon BETWEEN :min_lon AND :max_lon
+                      AND r.received_at >= :since
+                      AND r.group_id <> (SELECT group_id FROM reports WHERE id = :report_id)
+                      AND r.triage_state <> 'in_moderation'
+                      -- Grupo aberto: canônico não resolvido nem em moderação.
+                      AND NOT EXISTS (
+                          SELECT 1 FROM report_events m
+                          WHERE m.report_id IN (r.id, g.canonical_report_id)
+                            AND m.type IN ('enviado_moderacao', 'sinalizado')
+                      )
+                      AND NVL((
+                          SELECT s.type FROM report_events s
+                          WHERE s.report_id = g.canonical_report_id
+                            AND s.type IN ('recebido', 'encaminhado', 'em_andamento', 'resolvido', 'reaberto')
+                          ORDER BY s.id DESC FETCH FIRST 1 ROW ONLY
+                      ), 'recebido') <> 'resolvido'
+                    ORDER BY r.received_at DESC
+                    FETCH FIRST :max_items ROWS ONLY
+                    """,
+                    report_id=str(report_id),
+                    min_lat=box.min_lat,
+                    max_lat=box.max_lat,
+                    min_lon=box.min_lon,
+                    max_lon=box.max_lon,
+                    since=since,
+                    max_items=max_items,
+                )
+                return [
+                    DedupCandidate(
+                        report_id=UUID(row[0]),
+                        group_id=str(row[1]),
+                        latitude=float(row[2]),
+                        longitude=float(row[3]),
+                        description=row[4],
+                        category=ReportCategory(row[5]) if row[5] else None,
+                        subcategory=row[6],
+                    )
+                    for row in cursor.fetchall()
+                ]
+            finally:
+                cursor.close()
+
+    def link_to_group(
+        self,
+        report_id: UUID,
+        group_id: str,
+        *,
+        similarity: float,
+        distance_m: float,
+    ) -> None:
+        import oracledb
+
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                try:
+                    cursor.callproc(
+                        "PKG_DEDUP.vincular",
+                        [str(report_id), int(group_id), similarity, distance_m],
+                    )
+                    connection.commit()
+                    committed = True
+                except oracledb.DatabaseError as error:
+                    oracle_error = error.args[0] if error.args else None
+                    error_code = getattr(oracle_error, "code", None)
+                    if error_code == 20040:
+                        raise ReportNotFound from error
+                    if error_code == 20043:
+                        raise TriageConflict from error
+                    raise
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+
     def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
         with self._database.connection() as connection:
             cursor = connection.cursor()
@@ -2788,7 +3040,8 @@ class OracleReportRepository:
                               SELECT 1 FROM report_events t
                               WHERE t.report_id = c.report_id
                                 AND t.type IN (
-                                    'classificacao_confirmada', 'classificacao_corrigida', 'enviado_moderacao'
+                                    'classificacao_confirmada', 'classificacao_corrigida', 'enviado_moderacao',
+                                    'vinculado_grupo'
                                 )
                           )
                         ORDER BY c.created_at
