@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     report_job_poll_seconds: float = Field(default=1.0, gt=0)
     report_job_lease_seconds: int = Field(default=90, gt=0)
     report_job_max_attempts: int = Field(default=6, gt=0)
+    # D10: sem confirmação do cidadão nesse prazo, a sugestão é aplicada.
+    triage_auto_confirm_minutes: int = Field(default=10, gt=0)
+    triage_sweep_interval_seconds: float = Field(default=60, gt=0)
+    # Agrupamento de duplicados (RT-36): valores assumidos, a calibrar no piloto.
+    dedup_radius_meters: float = Field(default=50, gt=0)
+    dedup_window_days: int = Field(default=14, gt=0)
+    dedup_text_similarity: float = Field(default=0.8, ge=0, le=1)
+    dedup_max_candidates: int = Field(default=50, gt=0)
     # true: a API também executa jobs (modo memória/dev sem worker).
     # false: a API só enfileira; o container worker processa a fila.
     inline_job_processing: bool = True

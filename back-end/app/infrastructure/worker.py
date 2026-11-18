@@ -5,6 +5,7 @@ import os
 import socket
 import time
 from pathlib import Path
+from typing import Callable
 from uuid import UUID, uuid4
 
 from app.healthcheck import DEFAULT_HEARTBEAT_FILE
@@ -25,7 +26,9 @@ from app.services.notification_service import (
     AgencyNotificationService,
     CitizenNotificationService,
 )
+from app.services.dedup_service import DeduplicationService
 from app.services.photo_service import PhotoService
+from app.services.report_service import ReportService
 from app.services.visual_verification_service import VisualVerificationService
 
 logger = logging.getLogger(__name__)
@@ -47,8 +50,23 @@ class ReportJobWorker:
         citizen_notification_service: CitizenNotificationService | None = None,
         visual_verification_service: VisualVerificationService | None = None,
         heartbeat_path: Path | None = None,
+        triage_sweeper: Callable[[], int] | None = None,
+        deduplicator: Callable[[UUID], bool] | None = None,
+        sweep_interval_seconds: float | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._heartbeat_path = heartbeat_path
+        # Varredura periódica da triagem pendente (D10), fora da fila de jobs.
+        self._triage_sweeper = triage_sweeper
+        # Agrupamento de duplicados logo após a classificação (RT-36).
+        self._deduplicator = deduplicator
+        self._sweep_interval = (
+            settings.triage_sweep_interval_seconds
+            if sweep_interval_seconds is None
+            else sweep_interval_seconds
+        )
+        self._monotonic = monotonic
+        self._next_sweep_at: float | None = None
         self._queue = queue
         self._repository = repository
         self._classification_service = classification_service
@@ -84,8 +102,24 @@ class ReportJobWorker:
         except OSError:
             logger.warning("Não foi possível atualizar o heartbeat do worker.")
 
+    def _sweep_if_due(self) -> None:
+        if self._triage_sweeper is None:
+            return
+        now = self._monotonic()
+        if self._next_sweep_at is not None and now < self._next_sweep_at:
+            return
+        self._next_sweep_at = now + self._sweep_interval
+        try:
+            done = self._triage_sweeper()
+        except Exception as error:
+            logger.error("Falha na varredura de triagem (%s).", type(error).__name__)
+            return
+        if done:
+            logger.info("Triagem automática concluída para %s reporte(s).", done)
+
     def run_once(self) -> bool:
         self._beat()
+        self._sweep_if_due()
         job = self._queue.reserve_next(
             self._worker_id,
             self._lease_seconds,
@@ -100,6 +134,9 @@ class ReportJobWorker:
                 )
                 result = self._classification_service.classify(classification_input)
                 self._repository.record_classification(job.report_id, result)
+                if self._deduplicator is not None:
+                    # Falha aqui repete o job; a classificação já gravada é idempotente.
+                    self._deduplicator(job.report_id)
             elif job.stage == "verify_visual":
                 if self._visual_verification_service is None:
                     raise RuntimeError(
@@ -194,6 +231,10 @@ def main() -> None:
             heartbeat_path=Path(
                 os.environ.get("WORKER_HEARTBEAT_FILE", DEFAULT_HEARTBEAT_FILE)
             ),
+            triage_sweeper=ReportService(
+                repository, photo_storage
+            ).auto_confirm_due_triage,
+            deduplicator=DeduplicationService(repository).link_if_duplicate,
         )
         logger.info("Worker de reportes iniciado.")
         worker.run_forever()

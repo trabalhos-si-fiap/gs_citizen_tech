@@ -15,13 +15,22 @@ OPEN_STATUSES = frozenset({ReportStatus.FORWARDED, ReportStatus.IN_PROGRESS})
 DUE_SOON_WINDOW = timedelta(hours=12)
 
 
+def _as_utc(value: datetime) -> datetime:
+    # O driver Oracle devolve TIMESTAMP sem fuso; os prazos são gravados em UTC.
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
 def is_overdue(
     status: ReportStatus,
     deadline: datetime | None,
     now: datetime | None = None,
 ) -> bool:
     current = now or datetime.now(timezone.utc)
-    return status in OPEN_STATUSES and deadline is not None and deadline < current
+    return (
+        status in OPEN_STATUSES
+        and deadline is not None
+        and _as_utc(deadline) < current
+    )
 
 
 def is_due_soon(
@@ -33,7 +42,7 @@ def is_due_soon(
     return (
         status in OPEN_STATUSES
         and deadline is not None
-        and current <= deadline <= current + DUE_SOON_WINDOW
+        and current <= _as_utc(deadline) <= current + DUE_SOON_WINDOW
     )
 
 

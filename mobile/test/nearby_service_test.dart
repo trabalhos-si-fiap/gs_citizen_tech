@@ -188,6 +188,11 @@ void main() {
     });
   });
 
+  test('map and feed keep separate default stores', () {
+    // Abas com raio e filtro diferentes não podem sobrescrever o estado uma da outra.
+    expect(identical(NearbyStore.forMap, NearbyStore.forFeed), isFalse);
+  });
+
   group('category helpers', () {
     test('map chip labels to API values', () {
       expect(categoryForLabel('Todos'), isNull);

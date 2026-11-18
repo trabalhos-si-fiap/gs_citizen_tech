@@ -13,16 +13,16 @@ as telas mobile e os componentes Angular.
 
 | Camada | Estado | Pendência principal |
 |---|---|---|
-| Backend | Parcialmente implementado | Completar proximidade e triagem automática; integrar provedores e validar fluxos ponta a ponta |
+| Backend | Parcialmente implementado | Agrupamento de duplicados e triagem automática; integrar provedores e validar fluxos ponta a ponta |
 | Banco de dados | **Concluído** | Nenhuma pendência de modelagem/DDL; apenas eventual homologação no Oracle-alvo |
-| Flutter mobile | Integração em andamento | Feed/mapa público, configuração Firebase/OAuth nativa e teste integrado em dispositivo |
+| Flutter mobile | Integração em andamento | Firebase/OAuth nativos, assinatura de release e servidor de tiles para produção |
 | Web Angular | Protótipos, com indicadores públicos integrados | Autenticação institucional e consumo real das APIs de gestão |
 | Operação | Parcial | Stack local containerizado e testado; faltam CD, ambientes de homologação/produção, observabilidade e backup/restore |
 
 ### Dependências que bloqueiam mais de uma camada
 
-1. A rota pública de ocorrências próximas bloqueia o mapa e o feed comunitário
-   mobile.
+1. ~~A rota pública de ocorrências próximas bloqueia o mapa e o feed comunitário
+   mobile.~~ Resolvido: rota e telas entregues e validadas em aparelho.
 2. A decisão e implementação de autenticação institucional bloqueia os painéis
    web do órgão e de moderação.
 3. Credenciais e configuração nativa Firebase bloqueiam push real no Flutter.
@@ -42,13 +42,26 @@ as telas mobile e os componentes Angular.
   e distância são calculados sobre elas, para que não seja possível trilaterar a
   posição exata. Reportes em moderação ficam fora. Limite conhecido: no máximo
   1000 candidatos por consulta (os mais recentes), suficiente para o raio máximo.
-- [ ] **Conectar o agrupamento automático de duplicados.** `report_groups` e
-  confirmações existem, mas reportes novos são criados sem uma busca/decisão
-  completa de correspondência por distância, categoria e janela temporal.
-  Definir limites configuráveis e conservar um reporte canônico.
-- [ ] **Automatizar a confirmação/triagem pendente.** Executar a política após
-  `TRIAGE_AUTO_CONFIRM_MINUTES`, com idempotência e encaminhamento para
-  moderação quando a sugestão estiver ausente ou ambígua.
+- [x] **Conectar o agrupamento automático de duplicados.** Após classificar,
+  o worker procura reportes de outros grupos abertos (não resolvidos nem em
+  moderação) com a mesma categoria/subcategoria, a menos de
+  `DEDUP_RADIUS_METERS` (50) e criados em `DEDUP_WINDOW_DAYS` (14). Com texto
+  nos dois, exige semelhança de trigramas ≥ `DEDUP_TEXT_SIMILARITY` (0,80);
+  sem texto em um deles, distância menor que metade do raio. O vínculo
+  (`PKG_DEDUP.vincular`) move o reporte e as confirmações para o grupo,
+  encerra a triagem dele (`vinculado_grupo`, estado `auto_confirmed`) e o
+  membro passa a herdar status, órgão e prazo do reporte canônico; só o
+  canônico é encaminhado. Pendentes: comparação de imagem (pHash), push aos
+  membros quando o status do canônico muda (hoje eles veem por consulta) e
+  calibrar os limites com dados do piloto.
+- [x] **Automatizar a confirmação/triagem pendente.** O worker varre a cada
+  `TRIAGE_SWEEP_INTERVAL_SECONDS` (60) os reportes classificados há mais de
+  `TRIAGE_AUTO_CONFIRM_MINUTES` (10) ainda sem resposta do cidadão e aplica a
+  sugestão (`PKG_ROTEAMENTO.aplicar_triagem` com ação `auto`, ator `system`,
+  estado `auto_confirmed`). Sugestão ausente (`a_classificar`) ou escalada por
+  baixa confiança vai para moderação. Idempotente: a triagem trava a linha do
+  reporte e recusa uma segunda conclusão, então confirmação simultânea do
+  cidadão ou de outro worker é ignorada.
 - [ ] **Fechar a consistência do contrato OpenAPI.** Comparar cada operação
   publicada com rota, autenticação, schema, status HTTP e erros reais; remover
   contratos que não serão implementados ou implementar os que ainda faltam.
@@ -135,10 +148,12 @@ o estado de conclusão do modelo lógico nem do DDL.
   habilitar `ENABLE_FIREBASE_PUSH`, validar permissão, registro/rotação/remoção
   do token, push em foreground e abertura por push. Sem essa configuração, o
   polling permanece como fallback.
-- [ ] **Android:** o projeto Flutter versionado contém scaffolding iOS e macOS,
-  mas não possui diretório Android. Criar e configurar o target Android
-  (permissões de localização/câmera, Firebase e build) se Android fizer parte
-  do piloto.
+- [x] **Android:** target criado (`mobile/android/`, pacote
+  `br.fiap.reclameja.reclame_ja_mobile`) com permissões de internet e
+  localização; HTTP sem TLS liberado só no build de debug, para a API local.
+  Validado em aparelho físico (Galaxy S20 FE, Android 13): login de visitante,
+  mapa com ocorrências reais, filtro e feed. Pendentes: Firebase
+  (`google-services.json`) para push e chave de assinatura de release.
 - [ ] **Login Google:** não está integrado no app; a opção deve permanecer
   identificada como indisponível até configurar OAuth e validar o fluxo com o
   backend. Login por OTP é o fluxo disponível.
@@ -204,9 +219,9 @@ varredura Trivy e smoke test ponta a ponta contra Oracle real. Detalhes em
     por `ORACLE_IMAGE`) e a imagem oficial do Oracle Container Registry.
 - [x] Configuração não secreta em `.env` e segredos como Docker secrets fora
   do repositório e das imagens.
-- [ ] Expandir CI para lint/type-check do backend, análise/testes/build
-  Flutter e lint/test do Angular. Feito: testes do backend, build das imagens
-  (inclui o build do Angular) e smoke test do stack.
+- [ ] Expandir CI para lint/type-check do backend, build Android e lint/test
+  do Angular. Feito: testes do backend, `flutter analyze` e `flutter test`,
+  build das imagens (inclui o build do Angular) e smoke test do stack.
 - [ ] Criar CD para publicar imagens versionadas e implantar em homologação,
   executar smoke tests e exigir aprovação antes de produção; definir rollback.
 - [x] Varredura de vulnerabilidades das imagens (Trivy, falha em HIGH/CRITICAL
@@ -226,6 +241,69 @@ varredura Trivy e smoke test ponta a ponta contra Oracle real. Detalhes em
 **Critério de conclusão:** stack reproduzível e validado no ambiente aprovado,
 CI verde para as plataformas do piloto e implantação em homologação rastreável,
 com smoke test e rollback documentados.
+
+## 6. Pendências registradas nas entregas de 18/11/2026
+
+Itens levantados durante a containerização, a rota de proximidade e o teste do
+app em aparelho físico. Cada um precisa de decisão da equipe ou de trabalho
+ainda não iniciado.
+
+### Decisões da equipe
+
+- [ ] **Imagem do Oracle:** `gvenzl/oracle-free` (atual) ou imagem oficial do
+  Oracle Container Registry. Trocar só exige `ORACLE_IMAGE` no `.env`.
+- [ ] **Exposição do detalhe do reporte:** `GET /v1/reports/{id}` devolve a
+  descrição completa a qualquer cidadão autenticado, e o mapa agora leva
+  usuários a reportes de terceiros. Definir se a descrição é pública; se não
+  for, criar uma visão reduzida para quem não é dono do reporte.
+- [ ] **Servidor de tiles do mapa:** os tiles públicos do OpenStreetMap não
+  podem ser usados em produção (política de uso). Contratar ou hospedar um
+  servidor e trocar `osmTileUrl` em `mobile/lib/screens/tabs/map_tab.dart`.
+- [ ] **Resquício do Salesforce CLI:** `.sf/orgs/.../catalog.json` está
+  versionado sem relação com o projeto; confirmar e remover do git.
+
+### Backend e banco
+
+- [x] **Atualizações bloqueadas no Oracle:** o gatilho da V005 impedia
+  qualquer `UPDATE` em `reports` além da anonimização, quebrando sinalização,
+  status do órgão e conclusão de foto (ORA-20100). A V007 mantém o conteúdo
+  imutável e libera só os campos operacionais. Sinalização e status do órgão
+  também falhavam pelo bind `:resource` (palavra reservada, ORA-01745).
+- [ ] **Migração inválida fica registrada:** o executor grava a versão antes
+  de validar os objetos PL/SQL; uma migração com erro de compilação fica
+  marcada como aplicada. Validar por script antes de registrar.
+
+- [ ] **Fuso horário em `received_at`:** o Oracle devolve as datas sem fuso
+  (ex.: `2026-11-18T17:38:20`) em todas as rotas de leitura; normalizar para
+  UTC com offset na camada de repositório.
+- [ ] **`subcategory` no mapa:** `/v1/reports/nearby` devolve sempre `null`;
+  preencher a partir da classificação vigente.
+- [ ] **Teto de candidatos da proximidade:** no máximo 1000 reportes por
+  consulta (os mais recentes do retângulo). Revisar se o volume do piloto
+  passar disso.
+- [ ] **Usuário fixo no grant do Oracle:** `infra/oracle/initdb/01-grants.sql`
+  concede `CREATE JOB` ao usuário `reclameja` fixo; parametrizar se
+  `ORACLE_APP_USER` mudar.
+
+### Mobile
+
+- [ ] **Firebase no Android:** adicionar `google-services.json` e validar push
+  (hoje o polling é o fallback).
+- [ ] **Assinatura de release:** criar a chave de upload e configurar
+  `signingConfigs` (o build atual usa a chave de debug).
+- [ ] **Build Android no CI:** o CI roda análise e testes, mas não gera o APK.
+- [ ] **Imagem local do Flutter:** o build em Docker baixa NDK e CMake a cada
+  execução (fora dos volumes de cache); persistir o Android SDK se o fluxo em
+  container for o padrão da equipe.
+
+### Infraestrutura
+
+- [ ] **Ollama roda como root** (perfil opcional `ai`); avaliar imagem ou
+  usuário sem privilégios antes de ativar fora do ambiente local.
+- [ ] **URL da API no painel web:** o build do Angular usa a URL local; falta
+  injetar a URL por ambiente (homologação e produção).
+- [ ] **CD:** ainda não há publicação de imagens nem implantação automatizada
+  (ver seção 5).
 
 ## Critério de encerramento
 

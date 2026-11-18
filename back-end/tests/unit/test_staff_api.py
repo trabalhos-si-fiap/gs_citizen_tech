@@ -396,3 +396,18 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaffDeadlineTests(unittest.TestCase):
+    def test_naive_deadline_from_oracle_is_treated_as_utc(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from app.models.reports import ReportStatus
+        from app.models.staff import is_due_soon, is_overdue
+
+        now = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+        past = (now - timedelta(hours=1)).replace(tzinfo=None)
+        soon = (now + timedelta(hours=1)).replace(tzinfo=None)
+
+        self.assertTrue(is_overdue(ReportStatus.FORWARDED, past, now))
+        self.assertTrue(is_due_soon(ReportStatus.IN_PROGRESS, soon, now))

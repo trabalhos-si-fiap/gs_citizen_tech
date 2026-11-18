@@ -13,6 +13,15 @@ flutter run --dart-define=API_BASE_URL=http://<ip-da-maquina>:8000
 Com o stack Docker no ar (`docker compose up -d` na raiz), a API responde em
 `http://127.0.0.1:8000`. Em emulador Android use `http://10.0.2.2:8000`.
 
+Em aparelho Android via USB, redirecione a porta e use o endereço local
+(o build de debug aceita HTTP sem TLS; o de release não):
+
+```bash
+adb -s <serial> reverse tcp:8000 tcp:8000
+flutter build apk --debug --dart-define=API_BASE_URL=http://127.0.0.1:8000
+adb -s <serial> install -r build/app/outputs/flutter-apk/app-debug.apk
+```
+
 ## Testes
 
 ```bash

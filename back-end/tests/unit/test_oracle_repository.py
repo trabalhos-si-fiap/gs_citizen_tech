@@ -471,5 +471,98 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual(item.confirmation_count, 4)
 
 
+
+class OracleTriageSweepTests(unittest.TestCase):
+    def test_list_triage_due_selects_classified_reports_without_triage(self) -> None:
+        report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+        cutoff = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [(report_id,)]
+        repository = OracleReportRepository(database)
+
+        due = repository.list_triage_due(cutoff, limit=25)
+
+        self.assertEqual(due, [UUID(report_id)])
+        self.assertEqual(cursor.query_parameters, {"cutoff": cutoff, "limit": 25})
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("c.type = 'classificado'", query)
+        self.assertIn("c.created_at <= :cutoff", query)
+        self.assertIn(
+            "'classificacao_confirmada', 'classificacao_corrigida', 'enviado_moderacao'",
+            query,
+        )
+        self.assertTrue(cursor.closed)
+
+    def test_auto_triage_calls_package_without_citizen(self) -> None:
+        database = FakeDatabase()
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+        result = ClassificationResult(
+            category="risco_urbano",
+            subcategory=None,
+            urgency="media",
+            confidence=0.9,
+            immediate_risk=False,
+            model="fake",
+            source="ai",
+        )
+
+        repository.apply_triage(report_id, None, "auto", result, None, None)
+
+        cursor = database.fake_connection.fake_cursor
+        self.assertEqual(cursor.call_name, "PKG_ROTEAMENTO.aplicar_triagem")
+        self.assertEqual(cursor.call_parameters[:3], [str(report_id), None, "auto"])
+        self.assertTrue(database.fake_connection.committed)
+
+
+
+class OracleDedupTests(unittest.TestCase):
+    def test_list_dedup_candidates_filters_area_window_and_open_groups(self) -> None:
+        target = uuid4()
+        candidate = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+        since = datetime(2026, 11, 4, tzinfo=timezone.utc)
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [
+            (candidate, 12, -23.5501, -46.6331, "Buraco na calçada",
+             "risco_urbano", "buraco")
+        ]
+        repository = OracleReportRepository(database)
+        box = GeoBox(min_lat=-23.56, max_lat=-23.54, min_lon=-46.64, max_lon=-46.62)
+
+        found = repository.list_dedup_candidates(target, box, since, 50)
+
+        self.assertEqual(cursor.query_parameters, {
+            "report_id": str(target),
+            "min_lat": -23.56, "max_lat": -23.54,
+            "min_lon": -46.64, "max_lon": -46.62,
+            "since": since, "max_items": 50,
+        })
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("r.received_at >= :since", query)
+        self.assertIn("r.group_id <> (SELECT group_id FROM reports WHERE id = :report_id)", query)
+        self.assertIn("'resolvido'", query)
+        self.assertIn("'in_moderation'", query)
+        item = found[0]
+        self.assertEqual(item.report_id, UUID(candidate))
+        self.assertEqual(item.group_id, "12")
+        self.assertEqual(item.category, ReportCategory.URBAN_RISK)
+        self.assertEqual(item.subcategory, "buraco")
+        self.assertTrue(cursor.closed)
+
+    def test_link_to_group_calls_dedup_package(self) -> None:
+        database = FakeDatabase()
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+
+        repository.link_to_group(report_id, "12", similarity=0.91, distance_m=18.4)
+
+        cursor = database.fake_connection.fake_cursor
+        self.assertEqual(cursor.call_name, "PKG_DEDUP.vincular")
+        self.assertEqual(cursor.call_parameters, [str(report_id), 12, 0.91, 18.4])
+        self.assertTrue(database.fake_connection.committed)
+
+
 if __name__ == "__main__":
     unittest.main()

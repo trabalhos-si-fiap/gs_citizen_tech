@@ -146,7 +146,7 @@ altera o status.
 
 Provisionamento:
 
-- Oracle: aplique `@db/migrations/V006__staff_agency_operators.sql` (após V005)
+- Oracle: aplique `@db/migrations/V008__staff_agency_operators.sql` (após V007)
   e use `@db/provision_staff.sql` para definir papel e órgão de um usuário que
   já tenha feito login por OTP.
 - Desenvolvimento (`REPORT_REPOSITORY=memory`): defina

@@ -95,6 +95,38 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(detail.triage_state, TriageState.AWAITING_USER)
         self.assertFalse(worker.run_once())
 
+    def test_classification_is_followed_by_deduplication(self) -> None:
+        repository = InMemoryReportRepository()
+        report = NewReport(
+            id=uuid4(),
+            description="Vazamento de esgoto na rua.",
+            has_photo=False,
+            category=None,
+            latitude=-23.55,
+            longitude=-46.63,
+            location_accuracy_m=None,
+            anonymous=False,
+            client_created_at=self.now,
+            correlation_id=uuid4(),
+            user_id=11,
+            requester_user_id=11,
+        )
+        repository.create(report)
+        self.queue.enqueue(report.id, "classificar")
+        deduplicator = Mock(return_value=False)
+        worker = ReportJobWorker(
+            self.queue,
+            repository,
+            ClassificationService(FakeClassifier()),
+            worker_id="test-worker",
+            deduplicator=deduplicator,
+        )
+
+        worker.run_once()
+
+        deduplicator.assert_called_once_with(report.id)
+        self.assertIsNotNone(repository.get_detail(report.id).classification)
+
     def test_terminal_failure_sends_report_to_moderation(self) -> None:
         report_id = uuid4()
         self.queue.enqueue(report_id, "classificar")
@@ -210,6 +242,41 @@ class WorkerTests(unittest.TestCase):
         self.assertTrue(worker.run_once())
 
         citizen_notifications.notify_overdue.assert_called_once_with(report_id)
+
+
+
+class TriageSweepTests(unittest.TestCase):
+    def make_worker(self, sweeper, ticks):
+        return ReportJobWorker(
+            InMemoryJobQueue(),
+            InMemoryReportRepository(),
+            ClassificationService(FakeClassifier()),
+            worker_id=f"test-{uuid4()}",
+            triage_sweeper=sweeper,
+            sweep_interval_seconds=60,
+            monotonic=lambda: ticks[0],
+        )
+
+    def test_sweeps_due_triage_at_most_once_per_interval(self) -> None:
+        sweeper = Mock(return_value=0)
+        ticks = [1000.0]
+        worker = self.make_worker(sweeper, ticks)
+
+        worker.run_once()
+        ticks[0] += 30
+        worker.run_once()
+        self.assertEqual(sweeper.call_count, 1)
+
+        ticks[0] += 31
+        worker.run_once()
+        self.assertEqual(sweeper.call_count, 2)
+
+    def test_sweep_failure_does_not_stop_job_processing(self) -> None:
+        sweeper = Mock(side_effect=RuntimeError("banco indisponível"))
+        worker = self.make_worker(sweeper, [0.0])
+
+        with self.assertLogs("app.infrastructure.worker", level="ERROR"):
+            self.assertFalse(worker.run_once())
 
 
 if __name__ == "__main__":

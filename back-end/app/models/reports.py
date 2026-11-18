@@ -247,6 +247,19 @@ class ReportSummary:
 
 
 @dataclass(frozen=True)
+class DedupCandidate:
+    """Reporte próximo que pode ser o mesmo problema; `group_id` é o grupo dele."""
+
+    report_id: UUID
+    group_id: str
+    latitude: float
+    longitude: float
+    description: str | None
+    category: ReportCategory | None
+    subcategory: str | None
+
+
+@dataclass(frozen=True)
 class NearbyQuery:
     latitude: float
     longitude: float

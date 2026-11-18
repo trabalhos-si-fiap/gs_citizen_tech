@@ -28,9 +28,14 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
         v_status_event_id report_events.id%TYPE;
         v_payload CLOB;
         v_exists PLS_INTEGER;
+        v_actor report_events.actor%TYPE;
     BEGIN
-        IF p_action NOT IN ('confirm', 'correct') THEN
-            RAISE_APPLICATION_ERROR(-20043, 'Ação de triagem inválida');
+        -- 'auto': confirmação automática pelo sistema após
+        -- TRIAGE_AUTO_CONFIRM_MINUTES (D10), sem usuário.
+        IF p_action NOT IN ('confirm', 'correct', 'auto')
+           OR (p_action = 'auto' AND p_user_id IS NOT NULL)
+           OR (p_action <> 'auto' AND p_user_id IS NULL) THEN
+            RAISE_APPLICATION_ERROR(-20044, 'Ação de triagem inválida');
         END IF;
 
         BEGIN
@@ -44,13 +49,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
                 RAISE_APPLICATION_ERROR(-20040, 'Reporte não encontrado');
         END;
 
-        SELECT COUNT(*)
-        INTO v_exists
-        FROM notification_links
-        WHERE report_id = p_report_id
-          AND user_id = p_user_id;
-        IF v_exists = 0 THEN
-            RAISE_APPLICATION_ERROR(-20041, 'Solicitante não autorizado');
+        IF p_action <> 'auto' THEN
+            SELECT COUNT(*)
+            INTO v_exists
+            FROM notification_links
+            WHERE report_id = p_report_id
+              AND user_id = p_user_id;
+            IF v_exists = 0 THEN
+                RAISE_APPLICATION_ERROR(-20041, 'Solicitante não autorizado');
+            END IF;
         END IF;
 
         SELECT COUNT(*)
@@ -69,7 +76,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
           AND type IN (
               'classificacao_confirmada',
               'classificacao_corrigida',
-              'enviado_moderacao'
+              'enviado_moderacao',
+              'vinculado_grupo'
           );
         IF v_exists > 0 THEN
             RAISE_APPLICATION_ERROR(-20043, 'Triagem já concluída');
@@ -93,14 +101,18 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
         END IF;
 
         v_event_type := CASE
-            WHEN p_action = 'confirm' THEN 'classificacao_confirmada'
-            ELSE 'classificacao_corrigida'
+            WHEN p_action = 'correct' THEN 'classificacao_corrigida'
+            ELSE 'classificacao_confirmada'
+        END;
+        v_actor := CASE
+            WHEN p_action = 'auto' THEN 'system'
+            ELSE 'citizen:' || TO_CHAR(p_user_id)
         END;
         INSERT INTO report_events (report_id, type, actor, payload)
         VALUES (
             p_report_id,
             v_event_type,
-            'citizen:' || TO_CHAR(p_user_id),
+            v_actor,
             p_classification
         );
 
