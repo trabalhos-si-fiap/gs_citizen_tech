@@ -29,6 +29,7 @@ from app.infrastructure.repositories import (
     ReportRepository,
     TriageConflict,
 )
+from app.models.taxonomy import ReportCategory
 from app.services.routing_service import RoutingService
 
 CLIENT_TIMESTAMP_MAX_AGE = timedelta(days=30)
@@ -51,11 +52,16 @@ class ReportService:
         *,
         clock: Callable[[], datetime] | None = None,
         routing_service: RoutingService | None = None,
+        triage_auto_confirm_minutes: int | None = None,
     ) -> None:
         self._repository = repository
         self._object_storage = object_storage
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._routing_service = routing_service or RoutingService(clock=self._clock)
+        self._triage_auto_confirm = timedelta(
+            minutes=triage_auto_confirm_minutes
+            or settings.triage_auto_confirm_minutes
+        )
 
     def create(self, report: NewReport) -> ReportCreationResult:
         self._validate_client_timestamp(report.client_created_at)
@@ -121,6 +127,48 @@ class ReportService:
             deadline,
         )
         return self._repository.get_detail(report_id)
+
+    def auto_confirm_due_triage(self, limit: int = 50) -> int:
+        """Aplica a sugestão aos reportes sem confirmação do cidadão no prazo (D10).
+
+        Sugestão ausente ("a classificar") ou escalada por baixa confiança vai
+        para a moderação. Se o cidadão confirmar ao mesmo tempo, o repositório
+        recusa a segunda triagem e o reporte é ignorado. Devolve quantos
+        reportes tiveram a triagem concluída.
+        """
+        cutoff = self._clock() - self._triage_auto_confirm
+        done = 0
+        for report_id in self._repository.list_triage_due(cutoff, limit):
+            detail = self._repository.get_detail(report_id)
+            classification = detail.classification
+            if (
+                detail.triage_state != TriageState.AWAITING_USER
+                or classification is None
+            ):
+                continue
+            try:
+                if (
+                    classification.escalated
+                    or classification.category == ReportCategory.TO_CLASSIFY
+                ):
+                    self._repository.mark_for_moderation(report_id)
+                else:
+                    route = self._routing_service.find_rule(
+                        classification.category,
+                        classification.subcategory,
+                    )
+                    deadline = (
+                        self._clock() + timedelta(hours=route.deadline_hours)
+                        if route is not None
+                        else None
+                    )
+                    self._repository.apply_triage(
+                        report_id, None, "auto", classification, route, deadline
+                    )
+            except TriageConflict:
+                continue
+            done += 1
+        return done
 
     def list_user_reports(
         self,

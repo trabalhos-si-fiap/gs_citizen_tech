@@ -212,5 +212,40 @@ class WorkerTests(unittest.TestCase):
         citizen_notifications.notify_overdue.assert_called_once_with(report_id)
 
 
+
+class TriageSweepTests(unittest.TestCase):
+    def make_worker(self, sweeper, ticks):
+        return ReportJobWorker(
+            InMemoryJobQueue(),
+            InMemoryReportRepository(),
+            ClassificationService(FakeClassifier()),
+            worker_id=f"test-{uuid4()}",
+            triage_sweeper=sweeper,
+            sweep_interval_seconds=60,
+            monotonic=lambda: ticks[0],
+        )
+
+    def test_sweeps_due_triage_at_most_once_per_interval(self) -> None:
+        sweeper = Mock(return_value=0)
+        ticks = [1000.0]
+        worker = self.make_worker(sweeper, ticks)
+
+        worker.run_once()
+        ticks[0] += 30
+        worker.run_once()
+        self.assertEqual(sweeper.call_count, 1)
+
+        ticks[0] += 31
+        worker.run_once()
+        self.assertEqual(sweeper.call_count, 2)
+
+    def test_sweep_failure_does_not_stop_job_processing(self) -> None:
+        sweeper = Mock(side_effect=RuntimeError("banco indisponível"))
+        worker = self.make_worker(sweeper, [0.0])
+
+        with self.assertLogs("app.infrastructure.worker", level="ERROR"):
+            self.assertFalse(worker.run_once())
+
+
 if __name__ == "__main__":
     unittest.main()

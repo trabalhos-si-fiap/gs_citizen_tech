@@ -127,6 +127,8 @@ app.state.report_worker = ReportJobWorker(
     notification_service=app.state.notification_service,
     citizen_notification_service=app.state.citizen_notification_service,
     visual_verification_service=app.state.visual_verification_service,
+    # Só roda dentro de run_once, ou seja, quando a API processa jobs inline.
+    triage_sweeper=app.state.report_service.auto_confirm_due_triage,
 )
 app.state.auth_service = AuthService(auth_repository, SmtpOtpMailer(settings))
 app.state.privacy_service = PrivacyService(auth_repository, report_repository)

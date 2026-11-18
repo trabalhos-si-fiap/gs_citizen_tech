@@ -212,12 +212,19 @@ class ReportRepository(Protocol):
     def apply_triage(
         self,
         report_id: UUID,
-        user_id: int,
+        user_id: int | None,
         action: str,
         classification: ClassificationResult,
         route: RouteDecision | None,
         deadline: datetime | None,
-    ) -> None: ...
+    ) -> None:
+        """Conclui a triagem. `user_id=None` com `action="auto"` é a confirmação
+        automática do sistema (D10); levanta TriageConflict se já concluída."""
+        ...
+
+    def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
+        """Reportes classificados até `cutoff` que ainda aguardam o cidadão."""
+        ...
 
 
 class ObjectStorage(Protocol):
@@ -1218,35 +1225,57 @@ class InMemoryReportRepository:
                 "system",
             )
 
+    def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
+        with self._lock:
+            due = []
+            for report_id, (_, persisted) in self._reports.items():
+                if persisted.triage_state != TriageState.AWAITING_USER:
+                    continue
+                classified_at = next(
+                    (
+                        event.created_at
+                        for event in self._timeline[report_id]
+                        if event.type == "classificado"
+                    ),
+                    None,
+                )
+                if classified_at is not None and classified_at <= cutoff:
+                    due.append((classified_at, report_id))
+            due.sort()
+            return [report_id for _, report_id in due[:limit]]
+
     def apply_triage(
         self,
         report_id: UUID,
-        user_id: int,
+        user_id: int | None,
         action: str,
         classification: ClassificationResult,
         route: RouteDecision | None,
         deadline: datetime | None,
     ) -> None:
+        automatic = user_id is None
+        if automatic != (action == "auto"):
+            raise ValueError("Triagem automática exige action='auto' e sem usuário.")
         with self._lock:
             stored = self._reports.get(report_id)
             if stored is None:
                 raise ReportNotFound
             owner_id, persisted = stored
-            if owner_id != user_id:
+            if not automatic and owner_id != user_id:
                 raise ReportNotOwner
             if persisted.triage_state != TriageState.AWAITING_USER:
                 raise TriageConflict
 
             self._classifications[report_id] = classification
             triage_event = (
-                "classificacao_confirmada"
-                if action == "confirm"
-                else "classificacao_corrigida"
+                "classificacao_corrigida"
+                if action == "correct"
+                else "classificacao_confirmada"
             )
             self._append_event(
                 report_id,
                 triage_event,
-                f"citizen:{user_id}",
+                "system" if automatic else f"citizen:{user_id}",
             )
 
             if route is None:
@@ -1258,7 +1287,9 @@ class InMemoryReportRepository:
                     "system",
                 )
             else:
-                triage_state = TriageState.CONFIRMED
+                triage_state = (
+                    TriageState.AUTO_CONFIRMED if automatic else TriageState.CONFIRMED
+                )
                 status = ReportStatus.FORWARDED
                 self._routes[report_id] = route
                 if deadline is not None:
@@ -2032,7 +2063,7 @@ class OracleReportRepository:
                 ]
                 cursor.execute(
                     """
-                    SELECT type, payload, deadline
+                    SELECT type, payload, deadline, actor
                     FROM report_events
                     WHERE report_id = :report_id
                       AND type IN (
@@ -2052,7 +2083,7 @@ class OracleReportRepository:
                 agency_name = None
                 deadline = None
                 triage_state = TriageState.PENDING_CLASSIFICATION
-                for event_type, payload, event_deadline in triage_events:
+                for event_type, payload, event_deadline, actor in triage_events:
                     event_data = self._decode_event_payload(payload)
                     if event_type in (
                         "classificado",
@@ -2062,11 +2093,12 @@ class OracleReportRepository:
                         classification = ClassificationResult.model_validate(
                             event_data
                         )
-                        triage_state = (
-                            TriageState.AWAITING_USER
-                            if event_type == "classificado"
-                            else TriageState.CONFIRMED
-                        )
+                        if event_type == "classificado":
+                            triage_state = TriageState.AWAITING_USER
+                        elif actor == "system":
+                            triage_state = TriageState.AUTO_CONFIRMED
+                        else:
+                            triage_state = TriageState.CONFIRMED
                     elif event_type == "encaminhado":
                         agency_id = event_data.get("agency_id")
                         agency_name = event_data.get("agency_name")
@@ -2741,10 +2773,39 @@ class OracleReportRepository:
                 if not committed:
                     connection.rollback()
 
+    def list_triage_due(self, cutoff: datetime, limit: int) -> list[UUID]:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT report_id FROM (
+                        SELECT c.report_id
+                        FROM report_events c
+                        WHERE c.type = 'classificado'
+                          AND c.created_at <= :cutoff
+                          AND NOT EXISTS (
+                              SELECT 1 FROM report_events t
+                              WHERE t.report_id = c.report_id
+                                AND t.type IN (
+                                    'classificacao_confirmada', 'classificacao_corrigida', 'enviado_moderacao'
+                                )
+                          )
+                        ORDER BY c.created_at
+                    )
+                    WHERE ROWNUM <= :limit
+                    """,
+                    cutoff=cutoff,
+                    limit=limit,
+                )
+                return [UUID(row[0]) for row in cursor.fetchall()]
+            finally:
+                cursor.close()
+
     def apply_triage(
         self,
         report_id: UUID,
-        user_id: int,
+        user_id: int | None,
         action: str,
         classification: ClassificationResult,
         route: RouteDecision | None,

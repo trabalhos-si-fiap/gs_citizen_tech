@@ -46,9 +46,14 @@ as telas mobile e os componentes Angular.
   confirmações existem, mas reportes novos são criados sem uma busca/decisão
   completa de correspondência por distância, categoria e janela temporal.
   Definir limites configuráveis e conservar um reporte canônico.
-- [ ] **Automatizar a confirmação/triagem pendente.** Executar a política após
-  `TRIAGE_AUTO_CONFIRM_MINUTES`, com idempotência e encaminhamento para
-  moderação quando a sugestão estiver ausente ou ambígua.
+- [x] **Automatizar a confirmação/triagem pendente.** O worker varre a cada
+  `TRIAGE_SWEEP_INTERVAL_SECONDS` (60) os reportes classificados há mais de
+  `TRIAGE_AUTO_CONFIRM_MINUTES` (10) ainda sem resposta do cidadão e aplica a
+  sugestão (`PKG_ROTEAMENTO.aplicar_triagem` com ação `auto`, ator `system`,
+  estado `auto_confirmed`). Sugestão ausente (`a_classificar`) ou escalada por
+  baixa confiança vai para moderação. Idempotente: a triagem trava a linha do
+  reporte e recusa uma segunda conclusão, então confirmação simultânea do
+  cidadão ou de outro worker é ignorada.
 - [ ] **Fechar a consistência do contrato OpenAPI.** Comparar cada operação
   publicada com rota, autenticação, schema, status HTTP e erros reais; remover
   contratos que não serão implementados ou implementar os que ainda faltam.
