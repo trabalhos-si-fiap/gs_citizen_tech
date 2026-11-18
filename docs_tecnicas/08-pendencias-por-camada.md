@@ -123,9 +123,14 @@ o estado de conclusão do modelo lógico nem do DDL.
 
 ### Pendências antes de considerar a integração concluída
 
-- [ ] **Mapa e feed público:** substituir o mapa ilustrativo e as fontes locais
-  por dados da rota `/v1/reports/nearby`; hoje esses componentes ainda não
-  apresentam ocorrências públicas reais.
+- [x] **Mapa e feed público:** o mapa usa `flutter_map` com tiles do
+  OpenStreetMap e o feed "Perto de você" lista as ocorrências de
+  `/v1/reports/nearby` (sem token), com filtro por categoria, recarga ao parar o
+  mapa (*debounce* de 500 ms) e cache em memória por célula de ~110 m por 10
+  minutos. Sem permissão de localização, o centro padrão é a Praça da Sé.
+  Pendente: os tiles públicos do OSM não podem ser usados em produção (política
+  de uso); antes do lançamento, contratar ou hospedar um servidor de tiles e
+  trocar `osmTileUrl` em `mobile/lib/screens/tabs/map_tab.dart`.
 - [ ] **Push em dispositivo:** configurar Firebase para cada plataforma,
   habilitar `ENABLE_FIREBASE_PUSH`, validar permissão, registro/rotação/remoção
   do token, push em foreground e abertura por push. Sem essa configuração, o
