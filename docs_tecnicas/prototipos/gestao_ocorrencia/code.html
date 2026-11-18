@@ -1,0 +1,526 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_dashboard" name="shell-type"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..900;1,300..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;family=Space+Grotesk:wght@300..700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base { html, body { margin: 0; padding: 0; } body { overscroll-behavior: none; } main > :first-child { margin-top: 0 !important; } main > :last-child { margin-bottom: 0 !important; } } ::-webkit-scrollbar { display: none; }</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "inverse-surface": "#2f3133", "primary-fixed-dim": "#d4cb00", "surface": "#f9f9fc", "secondary-fixed": "#95f8a7", "inverse-on-surface": "#f0f0f3", "on-surface-variant": "#494832", "surface-container-low": "#f3f3f6", "on-primary-container": "#676300", "on-tertiary-container": "#00669b", "on-tertiary-fixed-variant": "#004b73", "background": "#f9f9fc", "tertiary": "#006398", "primary-container": "#ebe100", "tertiary-fixed": "#cce5ff", "on-primary": "#ffffff", "on-secondary": "#ffffff", "on-primary-fixed-variant": "#4c4800", "error-container": "#ffdad6", "on-tertiary-fixed": "#001d31", "error": "#ba1a1a", "on-error-container": "#93000a", "surface-container-high": "#e8e8ea", "outline": "#7b7860", "surface-container-highest": "#e2e2e5", "surface-tint": "#656100", "surface-bright": "#f9f9fc", "surface-variant": "#e2e2e5", "tertiary-fixed-dim": "#93ccff", "secondary-fixed-dim": "#79db8d", "surface-dim": "#dadadc", "surface-container": "#eeeef0", "on-tertiary": "#ffffff", "secondary-container": "#92f5a4", "on-error": "#ffffff", "on-background": "#1a1c1e", "secondary": "#006d30", "outline-variant": "#cbc7ab", "tertiary-container": "#c1e0ff", "on-secondary-fixed": "#00210a", "surface-container-lowest": "#ffffff", "inverse-primary": "#d4cb00", "primary-fixed": "#f2e813", "on-secondary-fixed-variant": "#005323", "on-primary-fixed": "#1e1c00", "on-secondary-container": "#007233", "primary": "#656100", "on-surface": "#1a1c1e" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "gutter-tablet": "1.5rem", "margin": "1rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "margin-tablet": "2rem", "space-xl": "2.5rem", "gutter": "1rem", "space-md": "1rem", "margin-desktop": "3rem", "gutter-desktop": "2rem", "space-lg": "1.5rem" }, "fontFamily": { "display-lg-mobile": [ "Space Grotesk" ], "label-md": [ "JetBrains Mono" ], "title-md": [ "Hanken Grotesk" ], "label-lg": [ "JetBrains Mono" ], "body-md": [ "Hanken Grotesk" ], "display-lg": [ "Space Grotesk" ], "headline-md": [ "Space Grotesk" ], "label-sm": [ "JetBrains Mono" ], "headline-lg": [ "Space Grotesk" ], "body-lg": [ "Hanken Grotesk" ], "title-lg": [ "Hanken Grotesk" ], "headline-lg-mobile": [ "Space Grotesk" ], "body-sm": [ "Hanken Grotesk" ], "headline-sm": [ "Space Grotesk" ] }, "fontSize": { "display-lg-mobile": [ "36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" } ], "label-md": [ "11px", { "lineHeight": "16px", "letterSpacing": "0.04em", "fontWeight": "500" } ], "title-md": [ "16px", { "lineHeight": "24px", "fontWeight": "600" } ], "label-lg": [ "13px", { "lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "500" } ], "body-md": [ "14px", { "lineHeight": "20px", "fontWeight": "400" } ], "display-lg": [ "48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" } ], "headline-md": [ "24px", { "lineHeight": "32px", "fontWeight": "600" } ], "label-sm": [ "10px", { "lineHeight": "14px", "letterSpacing": "0.06em", "fontWeight": "500" } ], "headline-lg": [ "32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" } ], "body-lg": [ "16px", { "lineHeight": "24px", "fontWeight": "400" } ], "title-lg": [ "18px", { "lineHeight": "26px", "fontWeight": "600" } ], "headline-lg-mobile": [ "26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" } ], "body-sm": [ "12px", { "lineHeight": "16px", "fontWeight": "400" } ], "headline-sm": [ "20px", { "lineHeight": "28px", "fontWeight": "600" } ] } } } };</script></head><body class="bg-surface font-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex flex-col justify-between py-space-md shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex flex-col gap-space-lg"><div class="px-space-md flex items-center gap-space-sm"><div class="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-on-secondary shadow-sm"><span class="material-symbols-outlined text-2xl">location_city</span></div><div class="flex flex-col"><span class="font-headline-sm text-headline-sm font-bold text-on-surface tracking-tight leading-none">Reclame Já</span><span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-semibold mt-1">Gestão Pública</span></div></div><div class="px-space-md"><div class="p-space-sm rounded-lg bg-surface-container flex flex-col gap-1"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Jurisdição Ativa</span><span class="font-title-md text-title-md text-on-surface font-semibold truncate">Prefeitura Municipal</span><div class="flex items-center gap-1.5 mt-0.5"><span class="w-2 h-2 rounded-full bg-secondary"></span><span class="font-label-sm text-label-sm text-secondary font-medium">Servidor Oficial Ativo</span></div></div></div><nav class="flex flex-col gap-1 px-space-md" data-active-classes="bg-primary-container text-on-primary-container font-bold rounded-lg shadow-sm"><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md" data-path="visao-geral" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span>Visão Geral</span></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md" data-path="gestao-de-ocorrencias" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">report_problem</span><span>Gestão de Ocorrências</span></div><span class="px-1.5 py-0.5 rounded-full bg-error-container text-on-error-container font-label-sm text-label-sm font-bold">12</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md" data-path="mapa-de-operacoes" href="#"><span class="material-symbols-outlined text-[20px]">map</span><span>Mapa de Operações</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md" data-path="relatorios" href="#"><span class="material-symbols-outlined text-[20px]">analytics</span><span>Relatórios</span></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md opacity-80" data-path="equipes-e-rotas" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">local_shipping</span><span>Equipes &amp; Rotas</span></div><span class="px-1.5 py-0.5 rounded text-[10px] font-label-sm font-semibold uppercase tracking-wider bg-surface-container-high text-on-surface-variant">Em Breve</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all font-body-md text-body-md" data-path="configuracoes-da-secretaria" href="#"><span class="material-symbols-outlined text-[20px]">tune</span><span>Configurações da Secretaria</span></a></nav></div><div class="px-space-md flex flex-col gap-space-sm"><div class="p-space-sm rounded-lg bg-surface-container flex items-center justify-between"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-secondary text-sm">verified</span><div class="flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant">SLA Diário</span><span class="font-label-md text-label-md font-semibold text-on-surface">94.2% Concluído</span></div></div><span class="material-symbols-outlined text-on-surface-variant text-base">chevron_right</span></div><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant hover:bg-error-container hover:text-on-error-container transition-all font-body-sm text-body-sm" data-path="login" href="#"><span class="material-symbols-outlined text-[18px]">logout</span><span>Encerrar Expediente</span></a></div></aside><div class="pl-72"><header class="fixed top-0 left-72 right-0 h-16 bg-surface/85 backdrop-blur-xl z-40 px-space-lg flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="flex items-center gap-space-md"><div class="flex items-center gap-2 px-space-md py-1.5 rounded-lg bg-surface-container-high text-on-surface"><span class="material-symbols-outlined text-secondary text-[20px]">apartment</span><div class="flex flex-col"><span class="font-label-sm text-label-sm text-on-surface-variant font-medium leading-none">Secretaria Ativa</span><span class="font-title-md text-title-md font-semibold leading-tight max-w-[340px] truncate">Sec. de Infraestrutura e Serviços Urbanos (SMISU)</span></div><span class="material-symbols-outlined text-on-surface-variant text-[18px] ml-1">expand_more</span></div></div><div class="flex items-center gap-space-md"><div class="relative flex items-center"><button class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span></button><span class="absolute top-1.5 right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary-container text-on-primary-container font-label-sm text-label-sm font-bold shadow-sm">3</span></div><div class="h-8 w-[1px] bg-outline-variant/30"></div><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-16 bg-surface min-h-screen px-gutter-desktop py-space-lg"><div class="flex flex-col w-full">
+<!-- Breadcrumbs & Quick Return Bar -->
+<div class="flex items-center justify-between pb-space-md mb-space-md">
+<div class="flex items-center gap-space-sm">
+<a class="flex items-center gap-1.5 px-space-sm py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-all font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined text-[16px]">arrow_back</span>
+<span>Voltar à Lista</span>
+</a>
+<span class="text-outline-variant font-label-md">/</span>
+<span class="text-on-surface-variant font-body-sm">Gestão de Reportes</span>
+<span class="text-outline-variant font-label-md">/</span>
+<span class="font-label-md text-label-md font-semibold text-secondary px-2 py-0.5 rounded bg-secondary-fixed/30 tracking-wider">#RPT-2026-4KQ7TD</span>
+</div>
+<!-- Actions shortcut & quick status pill -->
+<div class="flex items-center gap-space-sm">
+<span class="flex items-center gap-1.5 px-space-sm py-1 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-md text-label-md font-semibold">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+        Canal Oficial Aberto
+      </span>
+<button class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors" title="Imprimir Ordem de Serviço" type="button">
+<span class="material-symbols-outlined text-[18px]">print</span>
+</button>
+<button class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors" title="Compartilhar Link da Ocorrência" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+<!-- Header Banner / Incident Dossier Meta -->
+<section class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm mb-space-lg relative overflow-hidden">
+<div class="absolute -right-12 -top-12 w-64 h-64 rounded-full bg-gradient-to-br from-primary-container/20 to-transparent pointer-events-none blur-2xl"></div>
+<div class="flex flex-col lg:flex-row lg:items-start justify-between gap-space-md relative z-10">
+<div class="flex flex-col gap-2 max-w-3xl">
+<div class="flex flex-wrap items-center gap-2">
+<!-- Status Badge -->
+<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-tertiary-container text-on-tertiary-container font-label-md text-label-md font-bold tracking-wide">
+<span class="material-symbols-outlined text-[14px]">sync</span>
+            Em Análise Técnica
+          </span>
+<!-- Priority Badge -->
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-error-container text-on-error-container font-label-md text-label-md font-bold">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+            Prioridade Alta
+          </span>
+<!-- Category -->
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md font-medium">
+<span class="material-symbols-outlined text-[14px]">alt_route</span>
+            Asfalto &amp; Vias Públicas
+          </span>
+<!-- Region -->
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md font-medium">
+<span class="material-symbols-outlined text-[14px]">pin_drop</span>
+            Zona Sul / Pinheiros
+          </span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight mt-1">
+          Cratera profunda com risco iminente de acidente na pista central
+        </h1>
+<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-on-surface-variant font-body-sm text-body-sm mt-1">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-outline">schedule</span>
+            Registrado em 12 de Outubro de 2026 às 08:34 (Há 2 horas)
+          </span>
+<span class="text-outline-variant font-label-sm">•</span>
+<span class="flex items-center gap-1 text-secondary font-medium">
+<span class="material-symbols-outlined text-[16px]">verified_user</span>
+            Munícipe Autenticado (CPF e Gov.br Validados)
+          </span>
+<span class="text-outline-variant font-label-sm">•</span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-outline">
+            ORIGEM: APP RECLAME JÁ (v3.4.1)
+          </span>
+</div>
+</div>
+<!-- SLA Performance Meter Gauge -->
+<div class="lg:w-80 w-full p-space-md rounded-lg bg-surface-container-low flex flex-col gap-2 shrink-0">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-secondary text-[18px]">timer</span>
+<span class="font-label-md text-label-md font-semibold text-on-surface uppercase tracking-wider">Controle de SLA</span>
+</div>
+<span class="font-label-md text-label-md font-bold text-secondary">70h Restantes</span>
+</div>
+<!-- Meter bar -->
+<div class="w-full h-2 rounded-full bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-secondary rounded-full" style="width: 97%;"></div>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant">
+<span>Decorrido: 02h / 72h</span>
+<span class="text-secondary font-semibold">Dentro do Prazo Regulamentar</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Two-Column Asymmetric Workspace -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+<!-- LEFT COLUMN: Demands, Photographic Evidence & Trajectory (Approx 60% = 7 Cols) -->
+<div class="lg:col-span-7 flex flex-col gap-space-lg">
+<!-- Photographic Evidence Dossier -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[20px]">photo_camera</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Evidências Fotográficas e Ambientais</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Registradas pelo cidadão no momento do envio com validação EXIF</p>
+</div>
+</div>
+<span class="font-label-sm text-label-sm px-2 py-1 rounded bg-surface-container text-on-surface-variant uppercase font-medium">
+            2 Anexos Digitais
+          </span>
+</div>
+<!-- Main Photo Box with Civic Badge and Meta HUD -->
+<div class="relative w-full h-80 rounded-xl overflow-hidden bg-surface-container-high group">
+<img class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" data-alt="Fotografia de alta resolução em ângulo diagonal mostrando um buraco volumoso e profundo no asfalto molhado de uma grande avenida urbana paulistana com tráfego ao fundo em dia nublado, iluminação natural e realismo fotográfico" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0xLVdOkSE5eipqVL701ICJxZI0NAWmqOaeZ5_NXRFHz8OOES8uCRVAtXMj_VmHzCA5dE2lhPJNdQ3LsP1WquQzKnq8n9rs_MDMo48cBvWiLAqNrztcqEq95WuSbp60iKkwmm4Aeu0_xxNUYEvFlz5eu0VcKI9jgN02yRODXL2eWAvn1zlqC5FQyexMcPde4W3J50wtygSpt9PytKkuDnwDRolO2k02BUNOH65jhlo">
+<div class="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-transparent to-black/20 pointer-events-none"></div>
+<!-- Top Pill: GPS Lock -->
+<div class="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-inverse-surface/90 text-inverse-on-surface backdrop-blur-md font-label-sm text-label-sm shadow-sm">
+<span class="material-symbols-outlined text-[14px] text-secondary-fixed">my_location</span>
+<span>GPS VERIFICADO: -23.578491, -46.689230</span>
+</div>
+<!-- Mini Zoom Preview Indicator -->
+<button class="absolute top-3 right-3 w-8 h-8 rounded-full bg-inverse-surface/80 text-inverse-on-surface flex items-center justify-center hover:bg-inverse-surface transition-colors" title="Expandir Foto" type="button">
+<span class="material-symbols-outlined text-[18px]">zoom_in</span>
+</button>
+<!-- Bottom Meta Bar inside Photo -->
+<div class="absolute bottom-3 left-3 right-3 flex items-end justify-between text-inverse-on-surface">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm opacity-80 uppercase tracking-wider">Endereço Detectado por Satélite</span>
+<span class="font-title-md text-title-md font-semibold text-inverse-on-surface">Av. Brigadeiro Faria Lima, 2232 (Faixa Central)</span>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-secondary text-on-secondary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">format_image_left</span>
+              Georreferenciada
+            </div>
+</div>
+</div>
+<!-- Supplementary Evidence Thumbnails -->
+<div class="grid grid-cols-4 gap-space-sm pt-1">
+<div class="relative h-20 rounded-lg overflow-hidden bg-surface-container ring-2 ring-primary">
+<img class="w-full h-full object-cover" data-alt="Plano detalhe fechado mostrando o asfalto rompido com brita exposta e profundidade da cratera na via urbana, iluminação lateral difusa, padrão técnico de vistoria" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQ89udX0JtY_edfarNiLN7TuXwSzIU9ZTYgyO7pdZS5fSn3R9149dMtgQDOMHMHmiebYhB9-ujfv46SOT82R9CgZDz7P1BDNWbAXBM_wisCufmirUycw02Wajrp50khbJa_Fhu1IJIvDFA5HJHyknUnz6ONQhsItYfYIYURuS4b5pPinPuNZIK9lCLNHRyAsP12Y8BV6cDBQyqx7CETkj26pbryFcn0tn02v0Q6oqb">
+<span class="absolute bottom-1 right-1 px-1 rounded bg-inverse-surface/80 text-inverse-on-surface font-label-sm text-[9px]">FOTO 01</span>
+</div>
+<div class="relative h-20 rounded-lg overflow-hidden bg-surface-container opacity-60 hover:opacity-100 transition-opacity cursor-pointer">
+<img class="w-full h-full object-cover" data-alt="Vista angular panorâmica da calçada em frente ao número 2232 da avenida urbana mostrando fluxo de carros desviando do buraco, foto documental nítida" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHGwl23Y4rW1967y-2E8UEIkqJcU1rLaMLqluAYECgSytEIHVeMYpZe_sXStyGGgH-2b04_EVREfn9ov5PweMSt_xG7TM61SbKJ5b-eKE-D5-45ymO39wwjDEdEi_5z153qhTR7QN-VOR-r4P99ATV_HB4jvdAZDaVzcrIOv_Q8QYsh1jih_FUeYOnxvFbIjJNW-XL__VOkSPkcoScZ6pX8Z2JzLsN7MaWF-47Rqjx">
+<span class="absolute bottom-1 right-1 px-1 rounded bg-inverse-surface/80 text-inverse-on-surface font-label-sm text-[9px]">FOTO 02</span>
+</div>
+<div class="h-20 rounded-lg bg-surface-container-low flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors cursor-pointer text-center p-1">
+<span class="material-symbols-outlined text-[20px]">add_a_photo</span>
+<span class="font-label-sm text-label-sm font-medium mt-0.5">Anexar Vistoria</span>
+</div>
+<div class="h-20 rounded-lg bg-surface-container-low flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors cursor-pointer text-center p-1">
+<span class="material-symbols-outlined text-[20px]">attach_file</span>
+<span class="font-label-sm text-label-sm font-medium mt-0.5">Documentos</span>
+</div>
+</div>
+</section>
+<!-- Citizen Description & Context Statement -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">record_voice_over</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Depoimento e Relato do Munícipe</h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Declaração prestada via protocolo de solicitação pública</span>
+</div>
+</div>
+<div class="mt-2 p-space-md rounded-lg bg-surface-container-low text-on-surface">
+<p class="font-body-lg text-body-lg leading-relaxed italic text-on-surface">
+            “Buraco com cerca de 1 metro de diâmetro na faixa do meio, começou pequeno na chuva de ontem e hoje abriu mais ainda. Quase causou acidente gravíssimo com um motociclista por volta das 08h15. Risco altíssimo com chuva forte prevista para a tarde.”
+          </p>
+</div>
+<div class="pt-2"><div class="p-space-sm rounded-lg bg-surface-container flex items-center justify-between"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-error text-[20px]">error</span><div class="flex flex-col"><span class="text-on-surface-variant text-[11px] uppercase tracking-wider font-label-sm">Nível de Gravidade</span><span class="font-title-md text-title-md font-bold text-on-surface">Gravidade Crítica</span></div></div><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-error-container text-on-error-container font-label-md text-label-md font-bold"><span class="material-symbols-outlined text-[14px]">warning</span>Pista Rápida</span></div></div>
+</section>
+<!-- Geolocation Map Snippet -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">map</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Localização Cartográfica Oficial</h2>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Delimitação de malha viária e jurisdição subprefeitural</span>
+</div>
+</div>
+<a class="font-label-md text-label-md text-secondary font-semibold hover:underline flex items-center gap-1" href="#">
+<span>Abrir no SIG Municipal</span>
+<span class="material-symbols-outlined text-[16px]">open_in_new</span>
+</a>
+</div>
+<div class="w-full h-56 bg-cover bg-center rounded-xl relative shadow-inner overflow-hidden flex items-end p-space-md" data-location="Av. Brigadeiro Faria Lima 2232, Pinheiros, Sao Paulo" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAUhTuz-7qV0u5tsaTQTyEH7jXaXborUVEo03nJDB1CbnGK3cHaQ2OwS6Jd3qGZkakg9lZZoogi205KTK_mqEy37KqdYrpmqTr6U3-I5a_PSN5pVtmCjrJ2s8d3RUhGZ1e1jJMgI4PF2MNEfuXxhL58cfQ8jBJR2ZC70Nv-lFPayPxwE73kwZyjcn3_Ohkb8c-5k9xKj2IGFqMGcf3B086mzDKyYyh_8j7D4lMVfn35');">
+<div class="px-space-md py-space-sm rounded-lg bg-inverse-surface/90 text-inverse-on-surface backdrop-blur-md shadow-md flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary-fixed text-[24px]">wrong_location</span>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md font-semibold leading-tight">Av. Brig. Faria Lima, 2232</span>
+<span class="font-label-sm text-label-sm opacity-80">Subprefeitura de Pinheiros • Setor 04 (Vias Estruturantes)</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Audit Trail / Tramitation Timeline -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">history_edu</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Linha do Tempo e Trilha de Auditoria</h2>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Registro inviolável em banco de dados da municipalidade</span>
+</div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-mono">3 Eventos</span>
+</div>
+<!-- Vertical stepped timeline -->
+<div class="relative pl-6 flex flex-col gap-space-md mt-2">
+<!-- Continuous line -->
+<div class="absolute left-2.5 top-2 bottom-2 w-0.5 bg-surface-container-highest"></div>
+<!-- Step 1 -->
+<div class="relative flex items-start gap-space-md">
+<span class="w-5 h-5 rounded-full bg-secondary flex items-center justify-center text-on-secondary shrink-0 relative z-10 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">check</span>
+</span>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-title-md text-title-md font-semibold text-on-surface">Chamado protocolado com sucesso</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">08:34</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                Munícipe autenticado registrou ocorrência geolocalizada via aplicativo cidadão Reclame Já.
+              </p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="relative flex items-start gap-space-md">
+<span class="w-5 h-5 rounded-full bg-secondary flex items-center justify-center text-on-secondary shrink-0 relative z-10 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">check</span>
+</span>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-title-md text-title-md font-semibold text-on-surface">Triagem automática e catalogação inteligente</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">09:15</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                Sistema identificou malha viária crítica e atribuiu protocolo automático oficial <span class="font-label-sm text-label-sm font-semibold text-secondary">#RPT-2026-4KQ7TD</span>.
+              </p>
+</div>
+</div>
+<!-- Step 3 (Current) -->
+<div class="relative flex items-start gap-space-md">
+<span class="w-5 h-5 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container shrink-0 relative z-10 ring-4 ring-primary-container/20">
+<span class="material-symbols-outlined text-[12px]">pending</span>
+</span>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-title-md text-title-md font-bold text-on-surface">Encaminhado à Secretaria de Infraestrutura Urbana</span>
+<span class="font-label-sm text-label-sm font-semibold text-primary">09:40 (Atual)</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                Alocado no Departamento de Conservação Viária (DCV-03) sob responsabilidade do fiscal Eng. Roberto Silveira.
+              </p>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- RIGHT COLUMN: Fast Administrative Actions (Approx 40% = 5 Cols) -->
+<div class="lg:col-span-5 flex flex-col gap-space-lg">
+<!-- CARD 1: Core Civic Operations (Status Update & Dispatch) -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between pb-space-sm border-b-0">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined text-[20px]">bolt</span>
+</div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Ações Imediatas da Ocorrência</h2>
+</div>
+<span class="w-2.5 h-2.5 rounded-full bg-primary animate-ping"></span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Selecione a resolução administrativa para atualizar a malha operacional da prefeitura.
+        </p>
+<!-- Primary Action Trigger 1: Atualizar Status Modal/Dropdown Simulator -->
+<div class="p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-sm">
+<label class="font-title-md text-title-md font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px]">published_with_changes</span>
+            Atualizar Status do Processo
+          </label>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            Altera o ciclo de vida da demanda e notifica os canais centrais.
+          </p>
+<div class="grid grid-cols-2 gap-2 mt-1">
+<button class="flex items-center gap-2 p-space-sm rounded-lg bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-left transition-colors font-label-md text-label-md font-medium" type="button">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+<span>Em Análise</span>
+</button>
+<button class="flex items-center gap-2 p-space-sm rounded-lg bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-left transition-colors font-label-md text-label-md font-medium" type="button">
+<span class="w-2.5 h-2.5 rounded-full bg-primary-container"></span>
+<span>Em Execução</span>
+</button>
+<button class="flex items-center gap-2 p-space-sm rounded-lg bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-left transition-colors font-label-md text-label-md font-medium" type="button">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span>Resolvido</span>
+</button>
+<button class="flex items-center gap-2 p-space-sm rounded-lg bg-surface-container-lowest hover:bg-surface-container-high text-on-surface text-left transition-colors font-label-md text-label-md font-medium" type="button">
+<span class="w-2.5 h-2.5 rounded-full bg-error"></span>
+<span>Indeferido</span>
+</button>
+</div>
+<button class="mt-2 w-full py-2.5 px-space-md rounded-lg bg-secondary text-on-secondary hover:bg-secondary/90 transition-all font-title-md text-title-md font-semibold flex items-center justify-center gap-2 shadow-sm" id="open-status-btn" type="button">
+<span class="material-symbols-outlined text-[20px]">edit_note</span>
+<span>Confirmar Alteração de Status</span>
+</button>
+</div>
+<!-- Primary Action Trigger 2: Interinstitutional Forwarding (Direcionar a outro órgão) -->
+<div class="p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<label class="font-title-md text-title-md font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[18px]">account_balance</span>
+              Direcionar a Outro Órgão
+            </label>
+<span class="font-label-sm text-label-sm text-tertiary font-bold">1 Clique</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            A ocorrência não é de competência desta secretaria? Transfira de imediato:
+          </p>
+<div class="grid grid-cols-2 gap-2 mt-1">
+<button class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-lowest hover:bg-primary-container/30 transition-colors text-left font-body-sm text-body-sm font-medium text-on-surface" onclick="confirmDispatch('CET / Trânsito')" type="button">
+<span class="material-symbols-outlined text-[18px] text-tertiary">traffic</span>
+<span class="truncate">CET / Trânsito</span>
+</button>
+<button class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-lowest hover:bg-primary-container/30 transition-colors text-left font-body-sm text-body-sm font-medium text-on-surface" onclick="confirmDispatch('Iluminação Pública')" type="button">
+<span class="material-symbols-outlined text-[18px] text-primary">lightbulb</span>
+<span class="truncate">Iluminação Pública</span>
+</button>
+<button class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-lowest hover:bg-primary-container/30 transition-colors text-left font-body-sm text-body-sm font-medium text-on-surface" onclick="confirmDispatch('SABESP / Água &amp; Esgoto')" type="button">
+<span class="material-symbols-outlined text-[18px] text-tertiary">water_drop</span>
+<span class="truncate">SABESP / Água</span>
+</button>
+<button class="flex items-center gap-2 p-2 rounded-lg bg-surface-container-lowest hover:bg-primary-container/30 transition-colors text-left font-body-sm text-body-sm font-medium text-on-surface" onclick="confirmDispatch('Limpeza Urbana / COMLURB')" type="button">
+<span class="material-symbols-outlined text-[18px] text-secondary">delete_sweep</span>
+<span class="truncate">Limpeza Urbana</span>
+</button>
+</div>
+<button class="mt-2 w-full py-2.5 px-space-md rounded-lg bg-surface-container-highest hover:bg-surface-container-high text-on-surface transition-all font-title-md text-title-md font-semibold flex items-center justify-center gap-2" type="button">
+<span class="material-symbols-outlined text-[20px]">swap_horiz</span>
+<span>Ver Todos os 18 Órgãos Municipais</span>
+</button>
+</div>
+</section>
+<!-- CARD 2: Direct Citizen Communication & Dispatch -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[20px]">send</span>
+</div>
+<div>
+<h2 class="font-title-lg text-title-lg font-bold text-on-surface">Comunicação Oficial ao Cidadão</h2>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Notificação síncrona via App Push, SMS e E-mail</span>
+</div>
+</div>
+</div>
+<div class="p-space-sm rounded-lg bg-secondary-fixed/20 text-on-surface flex items-start gap-2">
+<span class="material-symbols-outlined text-secondary text-[18px] shrink-0 mt-0.5">campaign</span>
+<p class="font-body-sm text-body-sm">
+            As mensagens enviadas aqui aparecem em tempo real no histórico do munícipe garantindo a transparência pública ativa.
+          </p>
+</div>
+<!-- Quick template chips -->
+<div class="flex flex-col gap-1.5">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Modelos Rápidos Pré-Aprovados:</span>
+<div class="flex flex-wrap gap-1.5">
+<button class="px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high text-on-surface text-left font-label-md text-label-md transition-colors" onclick="insertTemplate('Equipe técnica destacada para vistoria no local com chegada prevista até as 14h.')" type="button">
+              + Vistoria agendada
+            </button>
+<button class="px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high text-on-surface text-left font-label-md text-label-md transition-colors" onclick="insertTemplate('Operação tapa-buraco em execução neste momento pela equipe DCV-03.')" type="button">
+              + Em execução no local
+            </button>
+<button class="px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high text-on-surface text-left font-label-md text-label-md transition-colors" onclick="insertTemplate('Aguardando entrega de insumos asfálticos pela usina municipal. Previsão de início em 24h.')" type="button">
+              + Aguardando peças/massa
+            </button>
+<button class="px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high text-on-surface text-left font-label-md text-label-md transition-colors" onclick="insertTemplate('Serviço de recapeamento finalizado com sucesso e via liberada ao tráfego.')" type="button">
+              + Serviço concluído
+            </button>
+</div>
+</div>
+<!-- Textarea input field -->
+<div class="flex flex-col gap-1">
+<textarea class="w-full p-space-md rounded-lg bg-surface-container-low text-on-surface font-body-md text-body-md placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest shadow-inner resize-none" id="citizen-msg-input" placeholder="Digite a atualização para o cidadão (ex: Equipe técnica da 3ª regional destacada para vistoria no local até as 14h...)" rows="4"></textarea>
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm px-1">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">notifications_active</span>
+              Dispara push notification imediata
+            </span>
+<span id="char-count">0 / 400 caracteres</span>
+</div>
+</div>
+<!-- Vibrant Yellow High-Impact Action Button as requested -->
+<button class="w-full py-3 px-space-md rounded-lg bg-primary-container text-on-primary-fixed hover:bg-primary-fixed transition-all font-title-lg text-title-lg font-bold flex items-center justify-center gap-2 shadow-sm" id="send-update-btn" type="button">
+<span class="material-symbols-outlined text-[22px]">send</span>
+<span>Publicar Atualização ao Cidadão</span>
+</button>
+</section>
+<!-- CARD 3: Current Responsible Agency & Officer -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg shadow-sm flex flex-col gap-space-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-semibold">Órgão e Responsável Atual</span>
+<span class="px-2 py-0.5 rounded bg-secondary-fixed/40 text-on-secondary-fixed font-label-sm text-label-sm font-semibold">Em Custódia</span>
+</div>
+<div class="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-2">
+<div class="flex items-start gap-3">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high flex items-center justify-center text-on-surface shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[22px]">corporate_fare</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Órgão Central</span>
+<span class="font-title-md text-title-md font-semibold text-on-surface">Sec. Municipal de Obras e Infraestrutura Urbana (SMOI)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Departamento de Conservação Viária (DCV-03)</span>
+</div>
+</div>
+<div class="w-full h-[1px] bg-surface-container-highest my-1"></div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-title-md font-bold">
+                RS
+              </div>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md font-semibold text-on-surface">Roberto Silveira</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Fiscal de Posturas • Matrícula #98124</span>
+</div>
+</div>
+<button class="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors" type="button">
+<span class="material-symbols-outlined text-[14px]">chat</span>
+<span>Contato Interno</span>
+</button>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Inline feedback notification toast container (dynamic) -->
+<div class="fixed bottom-6 right-6 hidden transform transition-all duration-300 z-50" id="toast-notification">
+<div class="flex items-center gap-3 px-space-lg py-space-md rounded-xl bg-inverse-surface text-inverse-on-surface shadow-xl">
+<span class="material-symbols-outlined text-secondary-fixed text-[24px]">task_alt</span>
+<div class="flex flex-col">
+<span class="font-title-md text-title-md font-semibold text-white" id="toast-title">Ação Concluída</span>
+<span class="font-body-sm text-body-sm text-inverse-on-surface/80" id="toast-msg">Mensagem enviada com sucesso ao munícipe.</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+  function insertTemplate(text) {
+    const input = document.getElementById('citizen-msg-input');
+    if (input) {
+      input.value = text;
+      updateCharCount();
+      input.focus();
+    }
+  }
+
+  function updateCharCount() {
+    const input = document.getElementById('citizen-msg-input');
+    const countEl = document.getElementById('char-count');
+    if (input && countEl) {
+      countEl.innerText = `${input.value.length} / 400 caracteres`;
+    }
+  }
+
+  function showToast(title, msg) {
+    const toast = document.getElementById('toast-notification');
+    const toastTitle = document.getElementById('toast-title');
+    const toastMsg = document.getElementById('toast-msg');
+    if (toast && toastTitle && toastMsg) {
+      toastTitle.innerText = title;
+      toastMsg.innerText = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 4000);
+    }
+  }
+
+  function confirmDispatch(agency) {
+    if (confirm(`Deseja realmente transferir a ocorrência #RPT-2026-4KQ7TD para "${agency}"?`)) {
+      showToast('Ocorrência Redirecionada', `Encaminhada com sucesso para ${agency}. SLA repactuado.`);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('citizen-msg-input');
+    const sendBtn = document.getElementById('send-update-btn');
+    const statusBtn = document.getElementById('open-status-btn');
+
+    if (input) {
+      input.addEventListener('input', updateCharCount);
+    }
+
+    if (sendBtn) {
+      sendBtn.addEventListener('click', () => {
+        if (!input.value.trim()) {
+          alert('Por favor, escreva uma mensagem antes de enviar.');
+          return;
+        }
+        showToast('Comunicado Publicado', 'Notificação Push enviada para o munícipe com sucesso.');
+        input.value = '';
+        updateCharCount();
+      });
+    }
+
+    if (statusBtn) {
+      statusBtn.addEventListener('click', () => {
+        showToast('Status Atualizado', 'Novo status gravado e registrado na linha do tempo.');
+      });
+    }
+  });
+</script></main></div>
+
+
+</body></html>
