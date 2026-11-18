@@ -1,0 +1,57 @@
+{
+  "territory_id": "municipio_demo",
+  "rules": [
+    {
+      "rule_id": "risco-urbano-geral",
+      "version": 1,
+      "territory_id": "municipio_demo",
+      "category": "risco_urbano",
+      "subcategory": null,
+      "agency_id": "prefeitura-demo-zeladoria",
+      "agency_name": "Prefeitura Demo — Zeladoria",
+      "agency_email": "zeladoria@example.org",
+      "deadline_hours": 72,
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_to": null
+    },
+    {
+      "rule_id": "esgoto-saneamento",
+      "version": 1,
+      "territory_id": "municipio_demo",
+      "category": "risco_urbano",
+      "subcategory": "esgoto_vazamento",
+      "agency_id": "saneamento-demo",
+      "agency_name": "Saneamento Demo",
+      "agency_email": "saneamento@example.org",
+      "deadline_hours": 120,
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_to": null
+    },
+    {
+      "rule_id": "transporte-operadora",
+      "version": 1,
+      "territory_id": "municipio_demo",
+      "category": "transporte_publico",
+      "subcategory": null,
+      "agency_id": "operadora-demo",
+      "agency_name": "Operadora Demo",
+      "agency_email": "transporte@example.org",
+      "deadline_hours": 72,
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_to": null
+    },
+    {
+      "rule_id": "saude-ouvidoria",
+      "version": 1,
+      "territory_id": "municipio_demo",
+      "category": "saude_atendimento",
+      "subcategory": null,
+      "agency_id": "ouvidoria-saude-demo",
+      "agency_name": "Ouvidoria Demo — Saúde",
+      "agency_email": "saude@example.org",
+      "deadline_hours": 240,
+      "valid_from": "2026-01-01T00:00:00Z",
+      "valid_to": null
+    }
+  ]
+}

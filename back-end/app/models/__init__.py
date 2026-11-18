@@ -1,1 +1,1 @@
-"""Modelos de domínio da aplicação."""
+"""Modelos de domínio e contratos HTTP."""

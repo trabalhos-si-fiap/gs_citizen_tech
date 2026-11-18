@@ -1,0 +1,25 @@
+{
+  "risco_urbano": [
+    "arvore_risco",
+    "esgoto_vazamento",
+    "calcada_danificada",
+    "iluminacao_falha",
+    "buraco_via",
+    "alagamento"
+  ],
+  "transporte_publico": [
+    "falha_trem_metro",
+    "onibus_atraso_lotacao",
+    "ponto_onibus_danificado",
+    "acessibilidade_estacao"
+  ],
+  "saude_atendimento": [
+    "falta_medicamento",
+    "falta_medico",
+    "demora_atendimento",
+    "estrutura_unidade"
+  ],
+  "a_classificar": [
+    "a_classificar"
+  ]
+}

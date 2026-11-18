@@ -68,7 +68,9 @@ paths:
                   expires_in: { type: integer, example: 600 }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
   /v1/auth/refresh:
     post:
@@ -167,7 +169,7 @@ paths:
   /v1/reports/{id}/photo/complete:
     post:
       tags: [reports]
-      summary: Informa que a foto foi enviada ao storage [EXTENSÃO]
+      summary: Conclui o upload e agenda a higienização da foto
       parameters:
         - $ref: "#/components/parameters/ReportId"
       requestBody:
@@ -192,6 +194,47 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/uploads/{token}:
+    put:
+      tags: [uploads]
+      security: []
+      summary: Envia a foto usando a URL assinada
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Upload recebido }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/photos/{token}:
+    get:
+      tags: [uploads]
+      security: []
+      summary: Lê uma foto usando uma URL assinada temporária
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Foto JPEG recodificada
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+
   /v1/reports/{id}/triage:
     post:
       tags: [reports]
@@ -210,13 +253,79 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ReportDetail" }
         "404": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/reports/{id}/comments:
+    get:
+      tags: [reports]
+      security: []
+      summary: Lista comentários públicos do reporte
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Comentários mais recentes primeiro
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, count]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, report_id, content, created_at]
+                      properties:
+                        id: { type: integer }
+                        report_id: { type: string, format: uuid }
+                        content: { type: string }
+                        created_at: { type: string, format: date-time }
+                  count: { type: integer }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [reports]
+      summary: Adiciona comentário público (sem edição/remoção no MVP)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "201":
+          description: Comentário publicado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, report_id, content, created_at]
+                properties:
+                  id: { type: integer }
+                  report_id: { type: string, format: uuid }
+                  content: { type: string }
+                  created_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
   /v1/reports/{id}/confirm:
     post:
       tags: [reports]
-      summary: Confirmação (+1), uma por usuário
+      summary: Confirmação “Vi isso” (+1), uma por usuário/grupo, exceto o autor
       parameters:
         - $ref: "#/components/parameters/ReportId"
       responses:
@@ -228,6 +337,7 @@ paths:
                 type: object
                 properties:
                   confirmation_count: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
@@ -336,6 +446,22 @@ paths:
       responses:
         "204":
           description: Registrado
+    delete:
+      tags: [me]
+      summary: Remove o token push do aparelho
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [push_token, platform]
+              properties:
+                push_token: { type: string }
+                platform: { type: string, enum: [android, ios] }
+      responses:
+        "204":
+          description: Removido
 
   /v1/me/reports:
     get:
@@ -584,14 +710,18 @@ components:
 
     Classification:
       type: object
-      required: [category, urgency, confidence, immediate_risk, source]
+      required: [category, confidence, immediate_risk, source, model, escalated]
       properties:
         category: { $ref: "#/components/schemas/Category" }
-        subcategory: { type: string }
-        urgency: { $ref: "#/components/schemas/Urgency" }
+        subcategory: { type: string, nullable: true }
+        urgency:
+          allOf: [{ $ref: "#/components/schemas/Urgency" }]
+          nullable: true
         confidence: { type: number, minimum: 0, maximum: 1 }
-        immediate_risk: { type: boolean }
+        immediate_risk: { type: boolean, nullable: true }
         source: { type: string, enum: [ai, user, none], description: "none = IA indisponível (RT-30)" }
+        model: { type: string }
+        escalated: { type: boolean }
 
     AgencyRef:
       type: object
@@ -620,11 +750,15 @@ components:
         protocol: { type: string }
         status: { $ref: "#/components/schemas/Status" }
         overdue: { type: boolean }
-        category: { $ref: "#/components/schemas/Category" }
+        category:
+          allOf: [{ $ref: "#/components/schemas/Category" }]
+          nullable: true
         subcategory: { type: string, nullable: true }
         lat: { type: number }
         lon: { type: number }
         received_at: { type: string, format: date-time }
+        group_id: { type: string }
+        confirmation_count: { type: integer, minimum: 0 }
 
     ReportDetail:
       allOf:
@@ -634,6 +768,7 @@ components:
             description: { type: string, nullable: true }
             photo_url: { type: string, format: uri, nullable: true, description: "URL assinada e temporária" }
             anonymous: { type: boolean }
+            has_photo: { type: boolean }
             triage_state: { $ref: "#/components/schemas/TriageState" }
             classification: { allOf: [{ $ref: "#/components/schemas/Classification" }], nullable: true }
             agency: { allOf: [{ $ref: "#/components/schemas/AgencyRef" }], nullable: true }

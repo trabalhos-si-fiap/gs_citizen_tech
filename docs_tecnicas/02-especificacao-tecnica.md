@@ -2,7 +2,6 @@
 
 Baseada nas Regras Técnicas (RT-xx). Complementa `01-especificacao-funcional.md`. Decisões **[ASSUMIDO]/[EXTENSÃO]** estão em `00-LEIA-ME.md`, seção 4.
 
-> **Revisão desta versão:** (1) removida toda dependência da AWS; (2) persistência migrada para **Oracle Database** com a lógica de dados em **PL/SQL**; (3) painéis web em **Streamlit** (protótipo) com **Angular** como evolução; (4) nova seção de **gerenciamento de memória e eficiência** (§12).
 
 ## 1. Stack e princípios
 
@@ -12,7 +11,7 @@ Baseada nas Regras Técnicas (RT-xx). Complementa `01-especificacao-funcional.md
 | API | Python 3.12, FastAPI, Pydantic v2, Uvicorn, `python-oracledb` (modo *thin*) | REST/JSON versionada em `/v1`; empacotada em contêiner (Docker) |
 | Persistência | **Oracle Database** (23ai Free/XE em dev; qualquer edição em produção) | Lógica de dados em **pacotes PL/SQL**; tabelas, índices e jobs versionados em `db/` |
 | Fotos | Volume de arquivos (`LocalStorage`); adaptador opcional para armazenamento de objetos compatível (ex.: MinIO) | URLs assinadas por HMAC; sem serviço de nuvem proprietário |
-| IA | Claude via API da Anthropic (modelo pequeno e modelo maior) | Atrás da porta `Classifier`; qualquer equivalente é aceitável (RT-01) |
+| IA | Via Ollma (modelo pequeno e modelo maior) | Atrás da porta `Classifier`; qualquer equivalente é aceitável (RT-01) |
 | Roteamento | Pacote PL/SQL `PKG_ROTEAMENTO` sobre a matriz | Código determinístico, sem IA |
 | Analítica | Schema `ANALYTICS` no Oracle: tabelas agregadas + *materialized views*, alimentadas por `PKG_INDICADORES` | Painéis só enxergam este schema (via API) |
 | Painéis web | **Streamlit** (protótipo) · **Angular** (evolução de produção) | Ambos consomem apenas a API `/v1` (§7.3) |
@@ -49,9 +48,9 @@ App Flutter ──HTTPS──► API FastAPI ──(python-oracledb)──► Or
 
 | # | Etapa | Gatilho | Resultado |
 | :-- | :-- | :-- | :-- |
-| 1 | Criar | `POST /v1/reports` → `PKG_REPORTES.registrar_reporte` | Grava `report`, evento `recebido`, gera protocolo, enfileira jobs; devolve URL de upload se `has_photo` |
-| 2 | Foto | `POST …/photo/complete` | Remove EXIF por **recodificação**, aplica `Redactor`, grava versão final no storage |
-| 3 | Classificar | Foto completa **ou** `PHOTO_WAIT_SECONDS` sem foto **ou** reporte sem foto | Evento `classificado` com categoria, urgência, confiança, risco |
+| 1 | Criar | `POST /v1/reports` → `PKG_REPORTES.registrar_reporte` | Grava `report`, evento `recebido`, gera protocolo, enfileira classificação somente sem foto; devolve URL assinada quando `has_photo` |
+| 2 | Foto | `POST …/photo/complete` → job durável `process_photo` | Remove EXIF por **recodificação** e grava versão JPEG final no storage; `Redactor` é no-op no MVP |
+| 3 | Classificar | Reporte sem foto | Evento `classificado` com categoria, urgência, confiança e risco; classificação visual aguarda verificações de conteúdo impróprio e imagem gerada por IA |
 | 4 | Deduplicar | Após classificar (`PKG_DEDUP.buscar_candidatos`) | Evento `vinculado_grupo` se houver grupo candidato (RT-36, RT-37) |
 | 5 | Triagem | `POST …/triage` ou auto-confirmação (D10) | Evento `classificacao_confirmada`/`classificacao_corrigida` |
 | 6 | Rotear | Após triagem (`PKG_ROTEAMENTO.rotear`) | Evento `encaminhado` com `rule_id` e `rule_version` (RT-35) |
@@ -79,8 +78,10 @@ Entidades de apoio **[EXTENSÃO]**:
 | :-- | :-- |
 | `report_state` | **Projeção** (status atual, `triage_state`, `group_id`, `last_event_id`), atualizada só por `PKG_EVENTOS` |
 | `notification_links` | (`report_id`, `user_id`, `push_token`): vínculo mínimo para notificar, **separado** do conteúdo (RT-22, RT-48); apagado com a conta |
+| `notification_devices` | (`push_token`, `user_id`, `platform`): tokens FCM registrados pelo cidadão, removidos junto com a conta |
 | `confirmations` | (`target_id`, `user_id`): garante uma confirmação por usuário (`/confirm`) |
 | `report_groups` | `id`, `canonical_report_id`, `member_count`, `confirmation_count` (RT-37) |
+| `report_comments` | `id`, `report_id`, `user_id`, `content`, `created_at`; comentários públicos e imutáveis no MVP |
 | `refresh_tokens` | hash do token, `user_id`, `expires_at`, `rotated_from` |
 | `otp_challenges` | hash do código, e-mail, `expires_at`, tentativas |
 | `flags` | (`report_id`, `user_id`, `reason`, `created_at`) para moderação (RN-35) |
@@ -100,6 +101,7 @@ Entidades de apoio **[EXTENSÃO]**:
 | `responsibility_rules` | PK `id` | Índice `(category, territory_id, valid_from)` |
 | `notification_links` | PK `(report_id, user_id)` | Índice por `user_id` |
 | `confirmations` | PK `(target_id, user_id)` | — |
+| `report_comments` | PK `id` | Índice `(report_id, created_at, id)`; sem `UPDATE`/`DELETE` no MVP |
 | `job_queue` | PK `id` | `UNIQUE(report_id, etapa)`; índice `(status, next_run_at)` |
 
 - **Criação idempotente (RT-03):** `INSERT` em `reports`; ao capturar `DUP_VAL_ON_INDEX` na PK, `PKG_REPORTES` devolve o reporte existente e sinaliza `p_criado = 0` (a API responde **200** em vez de **201**).
@@ -155,6 +157,7 @@ CREATE OR REPLACE PACKAGE pkg_reportes AS
   PROCEDURE registrar_reporte(
     p_id            IN  reports.id%TYPE,
     p_user_id       IN  reports.user_id%TYPE,          -- NULL se anônimo
+    p_requester_user_id IN users.id%TYPE,               -- identidade autenticada para idempotência e acompanhamento
     p_category      IN  reports.category%TYPE,
     p_description   IN  reports.description%TYPE,
     p_lat           IN  reports.lat%TYPE,
@@ -209,16 +212,19 @@ CREATE OR REPLACE PACKAGE BODY pkg_reportes AS
     END LOOP;
 
     pkg_eventos.registrar_evento(p_id, 'recebido', 'system');
-    IF p_push_token IS NOT NULL THEN
+    IF p_requester_user_id IS NOT NULL THEN
       INSERT INTO notification_links (report_id, user_id, push_token)
-      VALUES (p_id, p_user_id, p_push_token);
+      VALUES (p_id, p_requester_user_id, p_push_token);
     END IF;
-    pkg_jobs.enfileirar(p_id, CASE WHEN p_has_photo = 1 THEN 'aguardar_foto' ELSE 'classificar' END);
+    IF p_has_photo = 0 THEN
+      pkg_jobs.enfileirar(p_id, 'classificar');
+    END IF;
   EXCEPTION
     WHEN NO_DATA_FOUND THEN   -- colisão de protocolo: tenta de novo (limite de 5)
       v_tentativas := v_tentativas + 1;
       IF v_tentativas > 5 THEN RAISE; END IF;
-      registrar_reporte(p_id, p_user_id, p_category, p_description, p_lat, p_lon,
+      registrar_reporte(p_id, p_user_id, p_requester_user_id,
+                        p_category, p_description, p_lat, p_lon,
                         p_geohash, p_client_at, p_correlation, p_push_token,
                         p_has_photo, p_protocol, p_created);
   END;
@@ -280,18 +286,26 @@ END;
 
 - `reabrir` (RN-13): valida status `resolvido`, janela `REOPEN_WINDOW_DAYS` (de `app_config`) contada do evento `resolvido`, e autoria (`user_id` ou dono do `notification_links`); caso contrário `-20002`/`-20003`.
 - `cobrar` (RN-14): só se atrasado e sem `cobrado` nas últimas 72 h **[ASSUMIDO]**; grava `cobrado` e enfileira o reenvio ao órgão.
-- `marcar_atrasados` (rodada a cada 15 min pelo `DBMS_SCHEDULER`): processa em lotes com `BULK COLLECT … LIMIT` e `FORALL` (§12.1), grava o evento `atrasado` uma única vez por reporte e enfileira a notificação ao cidadão.
+- `marcar_atrasados` (rodada a cada 15 min pelo `DBMS_SCHEDULER`): consulta o último status e o prazo em lotes, enfileirando no máximo uma notificação por reporte ainda aberto. `atrasado` é derivado do prazo e do status atual, não é um evento persistido.
 
 ```sql
 PROCEDURE marcar_atrasados IS
   CURSOR c_atrasados IS
-    SELECT s.report_id
-      FROM report_state s
-      JOIN report_events e ON e.id = s.last_event_id
-     WHERE s.status IN ('encaminhado','em_andamento')
-       AND e.deadline < SYSTIMESTAMP
-       AND NOT EXISTS (SELECT 1 FROM report_events a
-                        WHERE a.report_id = s.report_id AND a.type = 'atrasado');
+    SELECT report_id
+      FROM (
+        SELECT report_id, type, deadline,
+               ROW_NUMBER() OVER (PARTITION BY report_id ORDER BY id DESC) rn
+          FROM report_events
+         WHERE type IN ('recebido','encaminhado','em_andamento','resolvido')
+      ) latest
+     WHERE rn = 1
+       AND type IN ('encaminhado','em_andamento')
+       AND deadline < SYSTIMESTAMP
+       AND NOT EXISTS (
+         SELECT 1 FROM job_queue j
+          WHERE j.report_id = latest.report_id
+            AND j.etapa = 'notify_overdue'
+       );
   TYPE t_ids IS TABLE OF reports.id%TYPE;
   v_ids t_ids;
 BEGIN
@@ -300,8 +314,7 @@ BEGIN
     FETCH c_atrasados BULK COLLECT INTO v_ids LIMIT 500;      -- memória limitada por lote
     EXIT WHEN v_ids.COUNT = 0;
     FOR i IN 1 .. v_ids.COUNT LOOP
-      pkg_eventos.registrar_evento(v_ids(i), 'atrasado', 'system');
-      pkg_jobs.enfileirar(v_ids(i), 'notificar_atraso');
+      pkg_jobs.enfileirar(v_ids(i), 'notify_overdue');
     END LOOP;
     COMMIT;                                                    -- libera UNDO e locks a cada lote
   END LOOP;
@@ -419,9 +432,9 @@ END;
 | `services/*` | Orquestração: `ReportService`, `ClassificationService`, `RoutingService`, `NotificationService`, `AnalyticsService` (chamam os pacotes PL/SQL via repositório) |
 | `domain/*` | Entidades, enums e derivação de status (funções puras, espelho testável das regras do PL/SQL) |
 | `ports/*` | `ReportRepository`, `ObjectStorage`, `Classifier`, `Redactor`, `Mailer`, `PushSender`, `JobQueue`, `AnalyticsStore`, `AgencyChannel` |
-| `adapters/*` | `OracleReportRepository`/`InMemoryRepository`, `LocalStorage`/`MinioStorage`, `AnthropicClassifier`/`NullClassifier`, `SmtpMailer`, `FcmPush`/`LogPush`, `OracleQueue`/`InMemoryQueue`, `OracleAnalyticsStore` |
+| `adapters/*` | `OracleReportRepository`/`InMemoryRepository`, `LocalStorage`/`MinioStorage`, `OllamaClassifier`/`FakeClassifier`/`NullClassifier`, `SmtpMailer`, `FcmPush`/`LogPush`, `OracleQueue`/`InMemoryQueue`, `OracleAnalyticsStore` |
 
-Seleção de adaptadores por variável de ambiente (`REPO=oracle|memory`, `STORAGE=local|minio`, `CLASSIFIER=anthropic|null`, `MAILER=smtp`, `PUSH=fcm|log`, `QUEUE=oracle|memory`, `ANALYTICS=oracle`).
+Seleção de adaptadores por variável de ambiente (`REPO=oracle|memory`, `STORAGE=local|minio`, `CLASSIFIER=ollama|fake|null`, `MAILER=smtp`, `PUSH=fcm|log`, `QUEUE=oracle|memory`, `ANALYTICS=oracle`).
 
 **Acesso ao banco:** `python-oracledb` com **pool de conexões** (`create_pool`, tamanho mínimo/máximo configurável), *bind variables* sempre (nunca concatenar SQL) e `fetch` em lotes (`arraysize`). Dois usuários de banco: `app_rw` (só `EXECUTE` nos pacotes e `SELECT` em views necessárias) e `analytics_ro` (só `SELECT` no schema `ANALYTICS`).
 
@@ -463,9 +476,9 @@ Códigos em `snake_case` (catálogo no guia de integração; tabela de traduçã
 ### 4.5 Remoção de metadados e redação de imagem (RT-23, RT-49, RT-32)
 
 1. O app comprime (≤ `PHOTO_MAX_BYTES`) e remove EXIF antes de enviar.
-2. O servidor **sempre recodifica** a imagem (Pillow) para descartar EXIF mesmo se o app falhar; rejeita tipos que não sejam JPEG/PNG/WebP e imagens acima de 5 MB. A leitura usa limite de pixels (`Image.MAX_IMAGE_PIXELS`) e *streaming* para disco (§12.2).
-3. Porta `Redactor.blur(image) -> image` para desfocar rostos e placas **quando detectados**. No protótipo, implementação *best-effort* opcional (OpenCV) ou *no-op*, documentada como limitação. Não declarar a proteção como garantida.
-4. **URLs assinadas sem nuvem:** a API gera URLs com `HMAC-SHA256(chave_segredo, caminho + expiração)`. Leitura expira em 15 min; upload em 10 min. Em `STORAGE=local`, a própria API valida a assinatura e serve o arquivo (`FileResponse`, em *streaming*); em `STORAGE=minio`, usa-se a URL pré-assinada do servidor MinIO.
+2. O servidor **sempre recodifica** a imagem (Pillow) para descartar EXIF mesmo se o app falhar; aceita apenas JPEG/PNG/WebP, aplica `PHOTO_MAX_BYTES` e limite de pixels (`Image.MAX_IMAGE_PIXELS`). O upload é recebido em *chunks* e a validação é limitada antes de entrar na fila durável (§12.2).
+3. Porta `Redactor.blur(image) -> image` para desfocar rostos e placas **quando detectados**. No MVP, `NoOpRedactor` não altera a imagem: detecção e desfoque ainda não estão implementados e a proteção não é garantida.
+4. **URLs assinadas sem nuvem:** a API gera URLs com `HMAC-SHA256(chave_segredo, caminho + expiração)`. Leitura expira em 15 min; upload em 10 min. Em `STORAGE=local`, a própria API valida a assinatura, recebe o upload e serve o JPEG recodificado (`FileResponse`, em *streaming*). A classificação da imagem e as verificações de conteúdo impróprio/geração por IA permanecem fora desta etapa.
 
 ## 5. IA de classificação (RT-24 a RT-32)
 
@@ -491,15 +504,15 @@ class ClassificationOutput(BaseModel):
 
 ### 5.2 Estratégia em duas etapas (RT-26, RT-27)
 
-1. Chamar o **modelo pequeno** (`AI_MODEL_SMALL`, padrão `claude-haiku-5-5`).
-2. Se `confidence < AI_CONFIDENCE_THRESHOLD`, chamar o **modelo maior** (`AI_MODEL_LARGE`, padrão `claude-sonnet-5-5`) com a mesma entrada.
-3. Se ainda abaixo do limiar: `triage_state = needs_user_confirmation`; se o usuário não escolher, `enviado_moderacao` (ou canal geral, RN-19).
-4. **Saída estruturada**: usar *tool use* com `input_schema` equivalente a `ClassificationOutput` para forçar JSON válido; validar com Pydantic; em falha de validação, tratar como erro da IA.
+1. Chamar o **modelo pequeno** (`AI_MODEL_SMALL`, padrão `qwen2.5:3b` no Ollama local).
+2. Se `confidence < AI_CONFIDENCE_THRESHOLD`, chamar o **modelo maior** (`AI_MODEL_LARGE`, padrão `qwen2.5:7b`) com a mesma entrada.
+3. Se ainda abaixo do limiar: `triage_state = awaiting_user`; sem regra ou quando não houver escolha do usuário, encaminhar à moderação (ou canal geral, RN-19).
+4. **Saída estruturada**: usar o schema JSON de `ClassificationOutput` do Ollama; validar com Pydantic e taxonomia; em falha de validação, tratar como erro da IA.
 
 ### 5.3 Prompt do sistema (modelo)
 
 ```
-Você classifica reportes de problemas urbanos no Brasil. Responda SOMENTE chamando a ferramenta `classify`.
+Você classifica reportes de problemas urbanos no Brasil. Responda SOMENTE em JSON válido conforme o schema.
 Categorias válidas: {taxonomia injetada de seeds/taxonomy.json}.
 Regras:
 - Use "a_classificar" quando a evidência for insuficiente.
@@ -563,8 +576,9 @@ Ao vincular (`pkg_dedup.vincular`): criar/atualizar `report_groups`, evento `vin
 ### 6.3 Notificações (RT-15, RT-39)
 
 - Push (FCM) a cada evento de status; texto em pt-BR; payload `{"type": "status_changed", "report_id": "…", "status": "em_andamento"}`. Sem permissão de push, o app continua funcionando e atualiza por consulta.
+- `PUT /v1/me/devices` registra o token; `DELETE /v1/me/devices` o remove. Tokens são separados do conteúdo do reporte e únicos entre contas.
 - E-mail (SMTP) para eventos críticos e para órgãos.
-- `JOB_ATRASADOS` (a cada 15 min) marca reportes atrasados e enfileira uma única notificação ao cidadão.
+- `JOB_ATRASADOS` (a cada 15 min) identifica reportes ainda abertos com prazo vencido e enfileira uma única notificação ao cidadão; o estado atrasado continua derivado.
 
 ## 7. Camada analítica e painéis web (RT-06, RT-41 a RT-44)
 

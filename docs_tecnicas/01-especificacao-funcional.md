@@ -85,7 +85,7 @@ Web: /public (painel público) e /panel (painel simples do órgão)
 
 | Passo | Conteúdo | Regras |
 | :-- | :-- | :-- |
-| 1. Foto e descrição | Câmera/galeria (opcional) e descrição curta com botão de **ditado por voz** (RT-14); categoria opcional | Exigir **foto ou descrição** (RN-09). Foto comprimida no aparelho (RT-10). Filtro local de emergência (D9) |
+| 1. Foto e descrição | Câmera/galeria (opcional) e descrição curta | Exigir **foto ou descrição** (RN-09). Foto comprimida no aparelho (RT-10). Filtro local de emergência (D9) |
 | 2. Local | Pin no mapa com GPS e ajuste manual; endereço aproximado exibido | Sem GPS, o usuário marca o ponto (RT-11) |
 | 3. Revisão e envio | Resumo, opção **"Reportar anonimamente"** (RN-12) e botão Enviar | Grava local primeiro; envia em segundo plano |
 
@@ -209,4 +209,4 @@ Regras de derivação **[ASSUMIDO]**:
 
 ## 8. Fora do escopo do protótipo (RT-65)
 
-Reputação, moderação completa, painel de gestão B2G (filas priorizadas, alertas), integrações por API com 156 e canais oficiais, comentários de cidadãos, multi-município, administração da matriz por interface. Devem constar como roadmap, **sem implementação**.
+Reputação, moderação completa, painel de gestão B2G (filas priorizadas, alertas), integrações por API com 156 e canais oficiais, multi-município e administração da matriz por interface permanecem no roadmap, **sem implementação**. Como extensão do MVP, comentários públicos são permitidos a usuários autenticados, sem edição ou remoção; a confirmação “Vi isso” segue a regra +1 por grupo e por usuário.

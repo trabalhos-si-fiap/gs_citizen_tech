@@ -1,7 +1,6 @@
 # App de Reportes Cidadãos — Pacote de especificação para implementação
 
 > Origem: documentos "Regras de Negócio" (RN-xx) e "Regras Técnicas" (RT-xx), de 04/11/2026, Global Solution CitizenTech (FIAP).
-> Destino: este pacote deve permitir que o Claude implemente o app **sem precisar de novas perguntas**. Onde os documentos-fonte são omissos, a decisão está registrada na seção 4 como **[ASSUMIDO]** e pode ser revista.
 
 ## 1. Conteúdo do pacote
 
@@ -13,7 +12,7 @@
 | `03-guia-integracao-front-back.md` | Como front-end (Flutter) e back-end (FastAPI) se conectam: convenções, contratos, sincronização offline e passo a passo |
 | `04-openapi.yaml` | Contrato da API v1, fonte da verdade para gerar clientes e testes |
 
-## 2. Instruções ao Claude implementador
+## 2. Instruções ao implementador
 
 1. **Leia os cinco arquivos antes de escrever código.** Ordem: 01 → 02 → 03 → 04.
 2. **Códigos são âncoras.** Cada regra tem um código (RN-xx ou RT-xx). Cite o código em comentários de teste e em mensagens de commit (`feat(routing): aplica matriz vigente (RT-33, RN-16)`).
@@ -24,42 +23,7 @@
 7. **Dados de demonstração são fictícios** (RT-63). Nenhum dado pessoal real em seeds, testes ou capturas.
 8. **Segredos nunca no repositório** (RT-46). Use `.env` (ignorado pelo git) e entregue um `.env.example`.
 
-## 3. Estrutura do repositório (monorepo)
-
-```
-citizen-reports/
-├── README.md
-├── docs/                      # este pacote de especificação
-│   └── DECISOES.md            # decisões novas tomadas durante a implementação
-├── contracts/
-│   └── openapi.yaml           # cópia de 04-openapi.yaml (fonte da verdade)
-├── backend/                   # FastAPI (Python 3.12)
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── config.py          # settings via pydantic-settings
-│   │   ├── api/v1/            # routers: auth, reports, me, public, agency, uploads
-│   │   ├── domain/            # modelos, enums, máquina de estados, regras puras
-│   │   ├── services/          # reports, routing, dedup, classification, notifications, analytics
-│   │   ├── ports/             # interfaces (Repository, Storage, Classifier, Mailer, Push, Queue, Analytics)
-│   │   ├── adapters/          # dynamo, s3, local_fs, anthropic, smtp/ses, fcm, duckdb/athena
-│   │   ├── workers/           # processamento assíncrono (classificação, roteamento, exportação)
-│   │   ├── web/               # painel simples (Jinja2) e painel público
-│   │   └── seeds/             # taxonomia, órgãos, matriz, território demo
-│   ├── tests/                 # unit, contract, e2e
-│   ├── pyproject.toml
-│   └── Dockerfile
-├── app/                       # Flutter (Android e iOS)
-│   ├── lib/
-│   │   ├── core/              # api client, auth, db local, sync, config, theme
-│   │   ├── features/          # home_map, new_report, triage, protocol, my_reports, emergency, auth, profile
-│   │   └── l10n/              # textos pt-BR
-│   ├── test/ e integration_test/
-│   └── pubspec.yaml
-├── infra/
-│   ├── docker-compose.yml     # dynamodb-local, mailhog, backend
-│   └── iac/                   # opcional: Terraform/SAM para AWS serverless (RT-02)
-└── .github/workflows/ci.yml   # lint, testes, build (RT-60)
-```
+#
 
 ## 4. Decisões assumidas (lacunas e ambiguidades dos documentos-fonte)
 

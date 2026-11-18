@@ -112,7 +112,7 @@ Content-Type: application/json
   "upload": {
     "url": "https://…/signed-put",
     "method": "PUT",
-    "headers": { "Content-Type": "image/jpeg" },
+    "headers": { "Content-Type": "application/octet-stream" },
     "max_bytes": 1000000,
     "expires_at": "2026-11-09T15:34:12Z"
   }
@@ -121,9 +121,13 @@ Content-Type: application/json
 
 ### 4.2 Enviar a foto (segundo plano) e concluir
 
-1. `PUT {upload.url}` com o corpo binário da foto e os `headers` devolvidos (sem `Authorization` quando a URL é do S3; em dev, `PUT /v1/uploads/{token}` também dispensa o Bearer porque o token da URL já autoriza).
+1. `PUT {upload.url}` com o corpo binário da foto e os `headers` devolvidos. O token da URL autoriza o upload; não envie `Authorization`.
 2. `POST /v1/reports/{id}/photo/complete` com `{"sha256": "<hex>"}` → **202**.
-3. Se a URL expirou (403/410 do storage), o app **repete `POST /v1/reports`** com o mesmo `id` para obter nova URL (idempotente).
+3. Se a URL expirou (410), o app **repete `POST /v1/reports`** com o mesmo `id` para obter nova URL (idempotente).
+4. `GET /v1/reports/{id}` devolve `photo_url` quando a recodificação termina; a URL de leitura também é assinada e temporária.
+
+Nesta etapa, fotos não são classificadas; a classificação visual será adicionada
+depois das verificações de conteúdo impróprio e de imagem gerada por IA.
 
 ### 4.3 Consultar a classificação (triagem)
 
@@ -167,8 +171,12 @@ Resposta: `ReportDetail` com o novo `agency` (recalculado pela matriz) e, após 
 | :-- | :-- | :-- |
 | Reabrir | `POST /v1/reports/{id}/reopen` | `can_reopen == true` |
 | Cobrar novamente | `POST /v1/reports/{id}/nudge` | `can_nudge == true` (atrasado) |
-| Confirmar (+1) | `POST /v1/reports/{id}/confirm` | Não é o autor; ainda não confirmou |
+| Vi isso (+1) | `POST /v1/reports/{id}/confirm` | Uma confirmação por usuário/grupo; não pode ser o autor |
 | Sinalizar | `POST /v1/reports/{id}/flag` | — |
+
+Comentários públicos: `GET /v1/reports/{id}/comments` não exige autenticação;
+`POST` na mesma rota exige usuário autenticado. Cada comentário aceita até 1000
+caracteres e não pode ser editado ou removido no MVP.
 
 O app usa **`can_reopen`** e **`can_nudge`** vindos do servidor; **não recalcula prazos localmente**.
 
@@ -191,7 +199,7 @@ Efeito: grava o evento, atualiza a projeção e dispara **push** ao cidadão (vi
 
 ## 5. Notificações push
 
-1. Após o login, o app pede permissão; se concedida, obtém o token FCM e chama `PUT /v1/me/devices`.
+1. Após o login, o app pede permissão; se concedida, obtém o token FCM e chama `PUT /v1/me/devices` com `push_token` e `platform`. Ao sair ou revogar a permissão, chama `DELETE /v1/me/devices`.
 2. Ao receber push (`onMessage`/`onMessageOpenedApp`), o app chama `GET /v1/reports/{id}` e atualiza o banco local; o push **não carrega dados do reporte além do ID e do status**.
 3. Permissão negada: o app **segue funcionando**, atualizando por consulta ao abrir "Meus reportes" e em intervalos quando em primeiro plano (a cada 60 s) (RT-15).
 
@@ -348,10 +356,11 @@ REPO=dynamo
 DYNAMO_ENDPOINT=http://dynamodb-local:8000
 STORAGE=local
 STORAGE_DIR=./data/uploads
-CLASSIFIER=anthropic        # ou null para rodar sem IA
-ANTHROPIC_API_KEY=
-AI_MODEL_SMALL=claude-haiku-5-5
-AI_MODEL_LARGE=claude-sonnet-5-5
+CLASSIFIER=ollama           # ou null para rodar sem IA
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+AI_MODEL_SMALL=qwen2.5:3b
+AI_MODEL_LARGE=qwen2.5:7b
+AI_CONFIDENCE_THRESHOLD=0.7
 MAILER=smtp
 SMTP_HOST=mailhog
 SMTP_PORT=1025
@@ -364,7 +373,7 @@ CORS_ORIGINS=http://localhost:8000
 
 Comandos esperados no `Makefile`: `make up`, `make seed-demo`, `make test`, `make lint`, `make contract-test`, `make e2e`.
 
-## 10. Passo a passo para o Claude implementar
+## 10. Passo a passo para implementar
 
 Cada passo tem **entrega** e **verificação**. Não avance sem a verificação verde.
 
@@ -378,7 +387,7 @@ Cada passo tem **entrega** e **verificação**. Não avance sem a verificação 
 | B4 | Auth: OTP por e-mail, Google, JWT, refresh rotativo, papéis | Fluxo completo com MailHog; refresh reutilizado = 401 |
 | B5 | `POST /v1/reports` idempotente, protocolo, evento `recebido`, `NotificationLink`, upload (local e assinado) | Reenviar o mesmo UUID 5× gera 1 reporte; anônimo não grava `user_id` |
 | B6 | Fotos: recodificação sem EXIF, `Redactor`, `photo/complete`, URLs assinadas de leitura | Imagem de teste com EXIF sai sem metadados |
-| B7 | `Classifier` (`Null`, `Fake` e `Anthropic`), duas etapas, cache, fallback, tokens registrados | Com `CLASSIFIER=null` o fluxo conclui como "a classificar" |
+| B7 | `Classifier` (`Null`, `Fake` e `Ollama`), duas etapas, cache, fallback, tokens registrados | Com `CLASSIFIER=null` o fluxo conclui como "a classificar" |
 | B8 | Deduplicação e grupos; confirmações (+1) | Casos limite de raio, janela e semelhança cobertos |
 | B9 | Roteamento (matriz versionada), triagem, auto-confirmação, e-mail ao órgão sem dados pessoais, reenvio com recuo | E-mail no MailHog sem nome/e-mail do cidadão; falha de SMTP gera reenvios registrados |
 | B10 | `GET /v1/reports/{id}`, `nearby`, `me/*`, reabrir, cobrar, sinalizar, painel do órgão (`/panel`) | Contrato validado com Schemathesis |
@@ -394,7 +403,7 @@ Cada passo tem **entrega** e **verificação**. Não avance sem a verificação 
 | F2 | Banco local (Drift), DAOs, `ApiClient` + `AuthInterceptor`, DTOs gerados | Teste do interceptor: 401 → refresh único → repete |
 | F3 | Onboarding, consentimento, login (OTP e Google), armazenamento seguro de tokens | Teste de widget do fluxo; tokens não aparecem em log |
 | F4 | Home com mapa OSM, marcadores, filtros, cache offline, atalho de Emergência | Sem rede, mostra o último cache |
-| F5 | Novo reporte (3 passos), GPS/pin, câmera/galeria, ditado, filtro de emergência, **faixa de emergência** | "Enviar" bloqueado sem foto e sem descrição |
+| F5 | Novo reporte (3 passos), GPS/pin, câmera/galeria, descrição, filtro de emergência, **faixa de emergência** | "Enviar" bloqueado sem foto e sem descrição |
 | F6 | `SyncEngine`, outbox, compressão, backoff, código provisório | Teste de integração: criar offline → ligar rede → 1 reporte no servidor, sem duplicata |
 | F7 | Confirmação da IA e do órgão (consulta com limite de 15 s, estados, IA indisponível, emergência) | Com classificador `fake` e `null` as duas telas se comportam como especificado |
 | F8 | Protocolo (copiar/compartilhar) | Exibe `LOCAL-…` offline e `RPT-…` após sincronizar |
