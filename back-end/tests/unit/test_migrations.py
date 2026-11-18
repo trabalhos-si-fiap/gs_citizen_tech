@@ -220,3 +220,29 @@ class MigrationRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RepositoryMigrationsTests(unittest.TestCase):
+    def test_tables_created_after_baseline_are_not_in_schema(self) -> None:
+        import re
+
+        db_dir = Path(__file__).resolve().parents[2] / "db"
+        schema = (db_dir / "schema.sql").read_text(encoding="utf-8")
+        baseline = int(
+            re.search(r"baseline-version:\s*(\d+)", schema).group(1)
+        )
+        schema_tables = set(
+            re.findall(r"CREATE TABLE (\w+)", schema, flags=re.IGNORECASE)
+        )
+        for path in sorted((db_dir / "migrations").glob("V*__*.sql")):
+            version = int(path.name[1:].split("__")[0])
+            if version <= baseline:
+                continue
+            created = re.findall(
+                r"CREATE TABLE (\w+)", path.read_text(encoding="utf-8"),
+                flags=re.IGNORECASE,
+            )
+            with self.subTest(migration=path.name):
+                # A migração roda depois do schema num banco novo; a tabela
+                # duplicada quebra a instalação limpa (ORA-00955).
+                self.assertFalse(set(created) & schema_tables)
