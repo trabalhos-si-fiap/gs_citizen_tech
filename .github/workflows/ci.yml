@@ -38,6 +38,21 @@ jobs:
           python-version: "3.12"
       - run: python -m unittest discover -s tests/infra -v
 
+  mobile:
+    name: Mobile (analyze e testes Flutter)
+    runs-on: ubuntu-latest
+    # Mesma versão exigida pelo pubspec.lock (Flutter >= 3.44).
+    container: ghcr.io/cirruslabs/flutter:3.44.0
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v5
+      - run: flutter --version
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+      - run: flutter test
+
   containers:
     name: Imagens, vulnerabilidades e smoke test
     runs-on: ubuntu-latest
