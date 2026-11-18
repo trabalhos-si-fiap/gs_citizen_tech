@@ -17,7 +17,7 @@ as telas mobile e os componentes Angular.
 | Banco de dados | **Concluído** | Nenhuma pendência de modelagem/DDL; apenas eventual homologação no Oracle-alvo |
 | Flutter mobile | Integração em andamento | Feed/mapa público, configuração Firebase/OAuth nativa e teste integrado em dispositivo |
 | Web Angular | Protótipos, com indicadores públicos integrados | Autenticação institucional e consumo real das APIs de gestão |
-| Operação | Parcial | Ambientes, segredos, observabilidade, segurança e backup/restore de produção |
+| Operação | Parcial | Stack local containerizado e testado; faltam CD, ambientes de homologação/produção, observabilidade e backup/restore |
 
 ### Dependências que bloqueiam mais de uma camada
 
@@ -176,29 +176,28 @@ integrações serem concluídas.
 
 ### Infraestrutura com Docker, Docker Compose e CI/CD
 
-**Base já existente:** [`back-end/Dockerfile`](../back-end/Dockerfile),
-[`docker-compose.yml`](../docker-compose.yml) com API, MailHog e volume de
-fotos, e workflow
-[`ci.yml`](../.github/workflows/ci.yml) com testes unitários do backend. A
-configuração atual ainda não sobe o worker nem o Oracle e o CI não valida mobile,
-web, build das imagens ou implantação contínua.
+**Estado:** stack containerizado com um container por função (`oracle`,
+`db-migrate`, `api`, `worker`, `web`, `mailpit` e `ollama` opcional), imagens
+multi-stage sem root e CI com testes unitários, estáticos de infraestrutura,
+varredura Trivy e smoke test ponta a ponta contra Oracle real. Detalhes em
+[`09-containers-docker.md`](./09-containers-docker.md).
 
-- [ ] Completar o Compose com worker, configuração compartilhada, conexão ao
-  Oracle-alvo e healthchecks; validar volume compartilhado de fotos entre API e
-  worker.
-- [ ] Manter o Oracle como serviço externo/aprovado e documentar como apontar
-  o ambiente local e o Compose para ele; não usar imagens de banco não oficiais
-  ou desconhecidas.
-- [ ] Separar configuração por ambiente e usar secrets fora do repositório;
-  não incluir `.env` real, credenciais ou segredos nas imagens, artefatos e
-  logs.
-- [ ] Expandir CI para lint/type-check e testes do backend, análise/testes/build
-  Flutter e lint/test/build Angular; construir e verificar as imagens Docker e
-  adicionar testes de contrato/smoke conforme os serviços estiverem disponíveis.
+- [x] Completar o Compose com worker, configuração compartilhada, conexão ao
+  Oracle e healthchecks; volume de fotos compartilhado entre API e worker
+  validado pelo smoke test.
+- [x] Oracle local em container com instalação limpa automatizada
+  (`db-migrate`); documentado como apontar para um Oracle externo.
+  - [ ] Decidir com a equipe entre `gvenzl/oracle-free` (atual, configurável
+    por `ORACLE_IMAGE`) e a imagem oficial do Oracle Container Registry.
+- [x] Configuração não secreta em `.env` e segredos como Docker secrets fora
+  do repositório e das imagens.
+- [ ] Expandir CI para lint/type-check do backend, análise/testes/build
+  Flutter e lint/test do Angular. Feito: testes do backend, build das imagens
+  (inclui o build do Angular) e smoke test do stack.
 - [ ] Criar CD para publicar imagens versionadas e implantar em homologação,
   executar smoke tests e exigir aprovação antes de produção; definir rollback.
-- [ ] Adicionar varredura de vulnerabilidades de dependências e imagens ao
-  pipeline.
+- [x] Varredura de vulnerabilidades das imagens (Trivy, falha em HIGH/CRITICAL
+  com correção disponível).
 
 ### Operação dos ambientes
 

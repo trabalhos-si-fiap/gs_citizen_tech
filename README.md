@@ -243,13 +243,27 @@ reclame-ja/
 # ⚙️ Pré-requisitos, Instalação e Execução
 
 
-## 1. Clonar o Repositório
+Pré-requisito: Docker Engine 24+ com Compose v2 e cerca de 4 GB de RAM livres.
 
 ```bash
-git clone https://github.com/seu-usuario/reclame-ja.git
+git clone https://github.com/trabalhos-si-fiap/gs_citizen_tech.git
+cd gs_citizen_tech
 
-cd reclame-ja
+cp .env.example .env              # configuração não secreta
+./scripts/init-secrets.sh         # gera os segredos locais em secrets/
+docker compose up --build --wait  # Oracle, migrations, API, worker, web e Mailpit
 ```
+
+| Serviço | Endereço |
+|---|---|
+| API (Swagger) | http://localhost:8000/docs |
+| Painel web | http://localhost:4200 |
+| E-mails de teste (Mailpit) | http://localhost:8025 |
+
+Testes: `python -m unittest discover -s tests/infra` (infraestrutura) e, com o
+stack no ar, `python -m unittest discover -s tests/smoke` (ponta a ponta).
+Arquitetura dos containers, segurança e migrations:
+[`docs_tecnicas/09-containers-docker.md`](docs_tecnicas/09-containers-docker.md).
 
 ---
 

@@ -13,6 +13,7 @@ from fastapi import (
 )
 
 from app.api.auth import require_agency_api_key, require_citizen
+from app.core.config import settings
 from app.models.classification import TriageRequest
 from app.models.reports import (
     AgencyResponse,
@@ -67,6 +68,15 @@ def get_report_service(request: Request) -> ReportService:
 
 def get_report_worker(request: Request) -> ReportJobWorker:
     return request.app.state.report_worker
+
+
+def process_jobs_inline(
+    background_tasks: BackgroundTasks,
+    worker: ReportJobWorker,
+) -> None:
+    """Processa a fila no próprio processo da API, salvo se há worker dedicado."""
+    if settings.inline_job_processing:
+        background_tasks.add_task(worker.run_once)
 
 
 def get_photo_service(request: Request) -> PhotoService:
@@ -126,7 +136,7 @@ def create_report(
     if not report.has_photo:
         worker = get_report_worker(request)
         worker.enqueue(report.id)
-        background_tasks.add_task(worker.run_once)
+        process_jobs_inline(background_tasks, worker)
     return ReportCreatedResponse(
         id=result.id,
         protocol=result.protocol,
@@ -221,7 +231,7 @@ def complete_report_photo(
             detail="A foto enviada é inválida.",
         ) from error
 
-    background_tasks.add_task(get_report_worker(request).run_once)
+    process_jobs_inline(background_tasks, get_report_worker(request))
     return PhotoProcessingResponse()
 
 
@@ -263,7 +273,7 @@ def triage_report(
     if detail.agency_id is not None:
         worker = get_report_worker(request)
         worker.enqueue(report_id, "notify_agency")
-        background_tasks.add_task(worker.run_once)
+        process_jobs_inline(background_tasks, worker)
         status_event = next(
             (
                 event
@@ -274,7 +284,7 @@ def triage_report(
         )
         if status_event is not None:
             worker.enqueue(report_id, f"notify_status_{status_event.id}")
-            background_tasks.add_task(worker.run_once)
+            process_jobs_inline(background_tasks, worker)
     return _to_detail_response(detail, _photo_url(photos, report_id))
 
 

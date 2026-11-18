@@ -159,19 +159,20 @@ homologação/produção.
 
 - [x] Dockerfile para a API, `docker-compose.yml` inicial e workflow de CI
   executando os testes unitários do backend.
-- [ ] Incluir o worker no Compose e configurar API/worker para compartilharem
+- [x] Incluir o worker no Compose e configurar API/worker para compartilharem
   configuração, conexão Oracle e volume de fotos; definir healthchecks e ordem
-  de inicialização sem depender apenas de `depends_on`.
-- [ ] Documentar configuração do Oracle-alvo e validar o stack com banco
-  Oracle aprovado; não depender de imagens de banco não oficiais ou
-  desconhecidas.
+  de inicialização sem depender apenas de `depends_on`. Ver
+  [`09-containers-docker.md`](./09-containers-docker.md).
+- [x] Validar o stack com Oracle 23ai Free em container: schema, migrations,
+  packages e `DBMS_SCHEDULER` aplicados e verificados pelo `db-migrate`.
+  [ ] Confirmar a imagem de banco aprovada pela equipe.
 - [ ] Expandir CI para lint/type-check e testes do backend, análise/testes/build
   Flutter e lint/test/build Angular; validar também a construção das imagens e
   executar smoke/contrato quando as dependências estiverem disponíveis.
 - [ ] Implementar CD para publicar imagens versionadas e implantar em
   homologação com smoke test, gestão de secrets e aprovação explícita antes de
   produção; documentar rollback.
-- [ ] Adicionar verificação de vulnerabilidades de dependências/imagens e
+- [x] Adicionar verificação de vulnerabilidades de dependências/imagens e
   garantir que credenciais e arquivos `.env` reais nunca sejam incluídos nos
   artefatos ou logs.
 - **Aceite:** configuração Compose válida, stack validado com serviços

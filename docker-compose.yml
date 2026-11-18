@@ -1,20 +1,222 @@
+# Stack local do Reclame Já: um container por função.
+# Guia completo: docs_tecnicas/09-containers-docker.md
+#
+#   cp .env.example .env && ./scripts/init-secrets.sh
+#   docker compose up --build --wait
+#
+# IA local (opcional): docker compose --profile ai up --wait
+
+name: reclame-ja
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Endurecimento comum aos containers construídos pelo projeto.
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  logging: *logging
+
+x-backend: &backend
+  <<: *hardened
+  build:
+    context: ./back-end
+    target: runtime
+  image: ${REGISTRY_PREFIX:-reclame-ja}/backend:${IMAGE_TAG:-local}
+  environment: &backend-env
+    ENVIRONMENT: ${ENVIRONMENT:-development}
+    REPORT_REPOSITORY: oracle
+    DB_USER: ${ORACLE_APP_USER:-reclameja}
+    DB_DSN: oracle:1521/FREEPDB1
+    SECRETS_DIR: /run/secrets
+    PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+    CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200}
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+    PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
+    CLASSIFIER: ${CLASSIFIER:-null}
+    OLLAMA_BASE_URL: http://ollama:11434
+    # Jobs são processados só pelo container worker.
+    INLINE_JOB_PROCESSING: "false"
+  secrets: [db_password, jwt_secret, photo_upload_secret, agency_api_keys]
+
 services:
-  api:
-    build:
-      context: ./back-end
-      dockerfile: Dockerfile
-    env_file:
-      - ./back-end/.env.example
+  # Banco de dados Oracle 23ai Free (dados persistidos no volume oracle-data).
+  oracle:
+    image: ${ORACLE_IMAGE:-gvenzl/oracle-free:23.6-slim-faststart}
+    environment:
+      ORACLE_PASSWORD_FILE: /run/secrets/oracle_password
+      APP_USER: ${ORACLE_APP_USER:-reclameja}
+      APP_USER_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [oracle_password, db_password]
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./infra/oracle/initdb:/container-entrypoint-initdb.d:ro
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${ORACLE_PORT:-1521}:1521"
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 2g }
+    logging: *logging
+    restart: unless-stopped
+
+  # Execução única: aplica schema, migrations e packages PL/SQL e termina.
+  db-migrate:
+    <<: *backend
+    command: ["python", "-m", "app.infrastructure.migrations"]
+    healthcheck:
+      disable: true
+    depends_on:
+      oracle: { condition: service_healthy }
+    networks: [data]
+    deploy:
+      resources:
+        limits: { memory: 256m }
+    restart: "no"
+
+  # API HTTP (FastAPI/uvicorn).
+  api:
+    <<: *backend
     volumes:
       - photo-data:/app/var/photos
-
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    networks: [data, app]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck", "api"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      db-migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    restart: unless-stopped
+
+  # Worker assíncrono: classificação, fotos e notificações (fila Oracle).
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.infrastructure.worker"]
+    environment:
+      <<: *backend-env
+      WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+    volumes:
+      - photo-data:/app/var/photos
+    networks: [data, app]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.healthcheck", "worker"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      db-migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    restart: unless-stopped
+
+  # Painel web Angular servido por nginx sem root.
+  web:
+    <<: *hardened
+    build:
+      context: ./web
+      target: runtime
+    image: ${REGISTRY_PREFIX:-reclame-ja}/web:${IMAGE_TAG:-local}
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    ports:
+      - "127.0.0.1:${WEB_PORT:-4200}:8080"
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 64m }
+    restart: unless-stopped
+
+  # SMTP de desenvolvimento: captura e-mails (OTP, órgãos) e exibe na UI.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 128m }
+    logging: *logging
+    restart: unless-stopped
+
+  # LLM local para classificação (opcional; perfil "ai").
+  ollama:
+    profiles: [ai]
+    image: ollama/ollama:0.12.6
+    volumes:
+      - ollama-models:/root/.ollama
+    networks: [data, app]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 8g }
+    logging: *logging
+    restart: unless-stopped
+
+networks:
+  # Rede interna: Oracle e Ollama não têm rota para fora nem para o painel web.
+  data:
+    internal: true
+  app: {}
 
 volumes:
+  oracle-data:
   photo-data:
+  ollama-models:
+
+secrets:
+  oracle_password:
+    file: ./secrets/oracle_password.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  photo_upload_secret:
+    file: ./secrets/photo_upload_secret.txt
+  agency_api_keys:
+    file: ./secrets/agency_api_keys.txt
