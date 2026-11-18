@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     report_job_lease_seconds: int = Field(default=90, gt=0)
     report_job_max_attempts: int = Field(default=6, gt=0)
     agency_api_keys: str = ""
+    # Somente com REPORT_REPOSITORY=memory: "email:papel[:agency_id],..."
+    dev_staff_accounts: str = ""
     visual_verification_enabled: bool = False
     visual_verification_provider: str = ""
 
