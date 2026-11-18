@@ -17,6 +17,12 @@ from app.models.classification import (
     ClassificationResult,
     RouteDecision,
 )
+from app.models.staff import (
+    StaffReportItem,
+    StaffSummary,
+    is_due_soon,
+    is_overdue,
+)
 from app.models.reports import (
     ClientTimestampOutOfRange,
     ReportCategory,
@@ -102,6 +108,14 @@ class InvalidAgencyAction(Exception):
     """A ação administrativa não é válida para o estado atual."""
 
 
+class StaffNotAuthorized(Exception):
+    """A conta não possui papel ou vínculo de servidor municipal."""
+
+
+class StaffTransitionNotAllowed(Exception):
+    """A transição de status não é permitida a partir do estado atual."""
+
+
 class ReportRepository(Protocol):
     def reopen_report(
         self,
@@ -126,7 +140,23 @@ class ReportRepository(Protocol):
         action: str,
         deadline: datetime | None,
         justification: str | None,
+        *,
+        actor: str = "agency",
+        actor_user_id: int | None = None,
     ) -> ReportDetail: ...
+
+    def list_staff_reports(
+        self,
+        agency_id: str | None,
+        status: ReportStatus | None,
+        category: ReportCategory | None,
+        overdue: bool,
+        query: str | None,
+        limit: int,
+        cursor_id: UUID | None,
+    ) -> list[StaffReportItem]: ...
+
+    def staff_summary(self, agency_id: str | None) -> StaffSummary: ...
 
     def list_moderation(self, limit: int) -> list[ReportSummary]: ...
 
@@ -229,6 +259,9 @@ class ObjectStorage(Protocol):
 class AuthRepository(Protocol):
     def get_user(self, user_id: int) -> AuthUser: ...
 
+    def get_staff_agency(self, user_id: int) -> str | None:
+        """Órgão ao qual o servidor com papel 'agency' está vinculado."""
+
     def update_email(self, user_id: int, email: str) -> AuthUser: ...
 
     def delete_account(self, user_id: int) -> None: ...
@@ -298,6 +331,7 @@ class InMemoryAuthRepository:
         self._google_sub_by_user: dict[int, str] = {}
         self._challenges: dict[str, _OtpChallenge] = {}
         self._refresh_tokens: dict[str, _RefreshToken] = {}
+        self._staff_agencies: dict[int, str] = {}
         self._next_user_id = 1
         self._lock = threading.Lock()
 
@@ -306,6 +340,39 @@ class InMemoryAuthRepository:
             user = self._users_by_id.get(user_id)
             if user is None:
                 raise AccountNotFound
+            return user
+
+    def get_staff_agency(self, user_id: int) -> str | None:
+        with self._lock:
+            return self._staff_agencies.get(user_id)
+
+    def provision_staff(
+        self,
+        email: str,
+        role: str,
+        agency_id: str | None = None,
+    ) -> AuthUser:
+        """Cria ou promove um servidor; uso restrito a desenvolvimento."""
+        normalized_email = email.strip().lower()
+        with self._lock:
+            current = self._users_by_email.get(normalized_email)
+            user = AuthUser(
+                id=current.id if current is not None else self._next_user_id,
+                email=normalized_email,
+                role=role,
+                consent_version=current.consent_version if current else None,
+                created_at=(
+                    current.created_at if current else datetime.now(timezone.utc)
+                ),
+            )
+            if current is None:
+                self._next_user_id += 1
+            self._users_by_email[normalized_email] = user
+            self._users_by_id[user.id] = user
+            if role == "agency" and agency_id:
+                self._staff_agencies[user.id] = agency_id
+            else:
+                self._staff_agencies.pop(user.id, None)
             return user
 
     def update_email(self, user_id: int, email: str) -> AuthUser:
@@ -795,6 +862,9 @@ class InMemoryReportRepository:
         action: str,
         deadline: datetime | None,
         justification: str | None,
+        *,
+        actor: str = "agency",
+        actor_user_id: int | None = None,
     ) -> ReportDetail:
         with self._lock:
             stored = self._reports.get(report_id)
@@ -832,10 +902,117 @@ class InMemoryReportRepository:
             self._append_event(
                 report_id,
                 event_type,
-                "agency",
+                actor,
                 justification,
             )
             return self.get_detail(report_id)
+
+    def _staff_item(
+        self,
+        report_id: UUID,
+        persisted: PersistedReport,
+        now: datetime,
+    ) -> StaffReportItem:
+        report_input = self._report_inputs[report_id]
+        route = self._routes.get(report_id)
+        classification = self._classifications.get(report_id)
+        deadline = self._deadlines.get(report_id)
+        return StaffReportItem(
+            id=report_id,
+            protocol=persisted.protocol,
+            status=persisted.status,
+            category=(
+                classification.category
+                if classification is not None
+                else report_input.category
+            ),
+            urgency=classification.urgency if classification else None,
+            immediate_risk=(
+                classification.immediate_risk if classification else None
+            ),
+            description=report_input.description,
+            latitude=report_input.latitude,
+            longitude=report_input.longitude,
+            received_at=persisted.received_at,
+            deadline=deadline,
+            overdue=is_overdue(persisted.status, deadline, now),
+            agency_id=route.agency_id if route else None,
+            agency_name=route.agency_name if route else None,
+            confirmation_count=len(self._confirmations.get(report_id, set())),
+        )
+
+    def _staff_scope(
+        self,
+        agency_id: str | None,
+    ) -> list[tuple[UUID, PersistedReport]]:
+        return [
+            (report_id, persisted)
+            for report_id, (_, persisted) in self._reports.items()
+            if agency_id is None
+            or (
+                report_id in self._routes
+                and self._routes[report_id].agency_id == agency_id
+            )
+        ]
+
+    def list_staff_reports(
+        self,
+        agency_id: str | None,
+        status: ReportStatus | None,
+        category: ReportCategory | None,
+        overdue: bool,
+        query: str | None,
+        limit: int,
+        cursor_id: UUID | None,
+    ) -> list[StaffReportItem]:
+        now = datetime.now(timezone.utc)
+        needle = query.strip().lower() if query else ""
+        with self._lock:
+            items = [
+                self._staff_item(report_id, persisted, now)
+                for report_id, persisted in self._staff_scope(agency_id)
+            ]
+            items = [
+                item
+                for item in items
+                if (status is None or item.status == status)
+                and (category is None or item.category == category)
+                and (not overdue or item.overdue)
+                and (
+                    not needle
+                    or needle in item.protocol.lower()
+                    or needle in (item.description or "").lower()
+                )
+            ]
+            items.sort(key=lambda item: (item.received_at, str(item.id)), reverse=True)
+            if cursor_id is not None:
+                index = next(
+                    (i for i, item in enumerate(items) if item.id == cursor_id),
+                    None,
+                )
+                if index is None:
+                    raise InvalidReportCursor
+                items = items[index + 1 :]
+            return items[:limit]
+
+    def staff_summary(self, agency_id: str | None) -> StaffSummary:
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            by_status = {status.value: 0 for status in ReportStatus}
+            overdue = 0
+            due_soon = 0
+            scoped = self._staff_scope(agency_id)
+            for report_id, persisted in scoped:
+                by_status[persisted.status.value] += 1
+                deadline = self._deadlines.get(report_id)
+                overdue += is_overdue(persisted.status, deadline, now)
+                due_soon += is_due_soon(persisted.status, deadline, now)
+            return StaffSummary(
+                total=len(scoped),
+                by_status=by_status,
+                overdue=overdue,
+                due_soon=due_soon,
+            )
 
     def list_moderation(self, limit: int) -> list[ReportSummary]:
         with self._lock:
@@ -1501,7 +1678,16 @@ class OracleReportRepository:
                 if not committed:
                     connection.rollback()
 
-    def update_agency_status(self, report_id, action, deadline, justification):
+    def update_agency_status(
+        self,
+        report_id,
+        action,
+        deadline,
+        justification,
+        *,
+        actor="agency",
+        actor_user_id=None,
+    ):
         if action not in {"in_progress", "resolved", "contest"}:
             raise InvalidAgencyAction
         if action == "in_progress" and deadline is None:
@@ -1528,10 +1714,11 @@ class OracleReportRepository:
                     """
                     INSERT INTO report_events
                         (report_id, type, actor, justification, deadline)
-                    VALUES (:report_id, :event_type, 'agency', :justification, :deadline)
+                    VALUES (:report_id, :event_type, :actor, :justification, :deadline)
                     """,
                     report_id=str(report_id),
                     event_type=event_type,
+                    actor=actor,
                     justification=justification,
                     deadline=deadline,
                 )
@@ -1550,9 +1737,10 @@ class OracleReportRepository:
                 cursor.execute(
                     """
                     INSERT INTO audit_log
-                        (action, resource_type, resource_id, justification)
-                    VALUES ('agency_status', 'report', :resource, :justification)
+                        (actor_user_id, action, resource_type, resource_id, justification)
+                    VALUES (:actor_user_id, 'agency_status', 'report', :resource, :justification)
                     """,
+                    actor_user_id=actor_user_id,
                     resource=str(report_id),
                     justification=justification,
                 )
@@ -1563,6 +1751,240 @@ class OracleReportRepository:
                 if not committed:
                     connection.rollback()
         return self.get_detail(report_id)
+
+    _STAFF_BASE_SQL = """
+        WITH latest_status AS (
+            SELECT report_id, type,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY report_id ORDER BY id DESC
+                   ) AS rn
+            FROM report_events
+            WHERE type IN (
+                'recebido', 'encaminhado', 'em_andamento', 'resolvido',
+                'reaberto'
+            )
+        ),
+        route AS (
+            SELECT report_id, deadline,
+                   JSON_VALUE(payload, '$.agency_id') AS agency_id,
+                   JSON_VALUE(payload, '$.agency_name') AS agency_name
+            FROM (
+                SELECT report_id, deadline, payload,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY report_id ORDER BY id DESC
+                       ) AS rn
+                FROM report_events
+                WHERE type = 'encaminhado'
+            )
+            WHERE rn = 1
+        ),
+        progress AS (
+            SELECT report_id, deadline
+            FROM (
+                SELECT report_id, deadline,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY report_id ORDER BY id DESC
+                       ) AS rn
+                FROM report_events
+                WHERE type = 'em_andamento' AND deadline IS NOT NULL
+            )
+            WHERE rn = 1
+        ),
+        klass AS (
+            SELECT report_id,
+                   JSON_VALUE(payload, '$.category') AS category,
+                   JSON_VALUE(payload, '$.urgency') AS urgency,
+                   JSON_VALUE(payload, '$.immediate_risk') AS immediate_risk
+            FROM (
+                SELECT report_id, payload,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY report_id ORDER BY id DESC
+                       ) AS rn
+                FROM report_events
+                WHERE type IN (
+                    'classificado',
+                    'classificacao_confirmada',
+                    'classificacao_corrigida'
+                )
+            )
+            WHERE rn = 1
+        ),
+        base AS (
+            SELECT r.id,
+                   r.protocol,
+                   CASE ls.type
+                       WHEN 'reaberto' THEN 'em_andamento'
+                       ELSE NVL(ls.type, 'recebido')
+                   END AS status,
+                   COALESCE(k.category, r.category) AS category,
+                   k.urgency,
+                   k.immediate_risk,
+                   r.description,
+                   r.lat,
+                   r.lon,
+                   r.received_at,
+                   COALESCE(p.deadline, rt.deadline) AS deadline,
+                   rt.agency_id,
+                   rt.agency_name,
+                   g.confirmation_count
+            FROM reports r
+            JOIN report_groups g ON g.id = r.group_id
+            LEFT JOIN latest_status ls
+                ON ls.report_id = r.id AND ls.rn = 1
+            LEFT JOIN route rt ON rt.report_id = r.id
+            LEFT JOIN progress p ON p.report_id = r.id
+            LEFT JOIN klass k ON k.report_id = r.id
+        )
+    """
+
+    def list_staff_reports(
+        self,
+        agency_id,
+        status,
+        category,
+        overdue,
+        query,
+        limit,
+        cursor_id,
+    ):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                parameters: dict[str, object] = {"limit": limit}
+                filters = ""
+                if agency_id is not None:
+                    filters += " AND agency_id = :agency_id"
+                    parameters["agency_id"] = agency_id
+                if status is not None:
+                    filters += " AND status = :status"
+                    parameters["status"] = status.value
+                if category is not None:
+                    filters += " AND category = :category"
+                    parameters["category"] = category.value
+                if overdue:
+                    filters += (
+                        " AND status IN ('encaminhado', 'em_andamento')"
+                        " AND deadline < SYSTIMESTAMP"
+                    )
+                if query and query.strip():
+                    filters += (
+                        " AND (INSTR(LOWER(protocol), :q) > 0"
+                        " OR INSTR(LOWER(description), :q) > 0)"
+                    )
+                    parameters["q"] = query.strip().lower()
+                if cursor_id is not None:
+                    cursor.execute(
+                        "SELECT received_at FROM reports WHERE id = :report_id",
+                        report_id=str(cursor_id),
+                    )
+                    cursor_row = cursor.fetchone()
+                    if cursor_row is None:
+                        raise InvalidReportCursor
+                    filters += """
+                        AND (
+                            received_at < :cursor_received_at
+                            OR (
+                                received_at = :cursor_received_at
+                                AND id < :cursor_id
+                            )
+                        )
+                    """
+                    parameters["cursor_received_at"] = cursor_row[0]
+                    parameters["cursor_id"] = str(cursor_id)
+
+                cursor.execute(
+                    f"""
+                    {self._STAFF_BASE_SQL}
+                    SELECT id, protocol, status, category, urgency,
+                           immediate_risk, description, lat, lon, received_at,
+                           deadline, agency_id, agency_name,
+                           confirmation_count
+                    FROM (
+                        SELECT * FROM base
+                        WHERE 1 = 1 {filters}
+                        ORDER BY received_at DESC, id DESC
+                    )
+                    WHERE ROWNUM <= :limit
+                    """,
+                    **parameters,
+                )
+                now = datetime.now(timezone.utc)
+                items = []
+                for row in cursor.fetchall():
+                    row_status = ReportStatus(row[2])
+                    risk = row[5]
+                    items.append(
+                        StaffReportItem(
+                            id=UUID(row[0]),
+                            protocol=row[1],
+                            status=row_status,
+                            category=ReportCategory(row[3]) if row[3] else None,
+                            urgency=row[4],
+                            immediate_risk=(
+                                None if risk is None else risk == "true"
+                            ),
+                            description=row[6],
+                            latitude=float(row[7]),
+                            longitude=float(row[8]),
+                            received_at=row[9],
+                            deadline=row[10],
+                            overdue=is_overdue(row_status, row[10], now),
+                            agency_id=row[11],
+                            agency_name=row[12],
+                            confirmation_count=int(row[13]),
+                        )
+                    )
+                return items
+            finally:
+                cursor.close()
+
+    def staff_summary(self, agency_id):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                parameters: dict[str, object] = {}
+                scope = ""
+                if agency_id is not None:
+                    scope = "WHERE agency_id = :agency_id"
+                    parameters["agency_id"] = agency_id
+                cursor.execute(
+                    f"""
+                    {self._STAFF_BASE_SQL}
+                    SELECT status,
+                           COUNT(*),
+                           SUM(CASE
+                                   WHEN status IN ('encaminhado', 'em_andamento')
+                                    AND deadline < SYSTIMESTAMP THEN 1
+                                   ELSE 0
+                               END),
+                           SUM(CASE
+                                   WHEN status IN ('encaminhado', 'em_andamento')
+                                    AND deadline >= SYSTIMESTAMP
+                                    AND deadline <= SYSTIMESTAMP
+                                        + INTERVAL '12' HOUR THEN 1
+                                   ELSE 0
+                               END)
+                    FROM base
+                    {scope}
+                    GROUP BY status
+                    """,
+                    **parameters,
+                )
+                by_status = {status.value: 0 for status in ReportStatus}
+                overdue = 0
+                due_soon = 0
+                for row in cursor.fetchall():
+                    by_status[row[0]] = int(row[1])
+                    overdue += int(row[2] or 0)
+                    due_soon += int(row[3] or 0)
+                return StaffSummary(
+                    total=sum(by_status.values()),
+                    by_status=by_status,
+                    overdue=overdue,
+                    due_soon=due_soon,
+                )
+            finally:
+                cursor.close()
 
     def list_moderation(self, limit):
         with self._database.connection() as connection:
@@ -2676,6 +3098,23 @@ class OracleReportRepository:
 class OracleAuthRepository:
     def __init__(self, database: OracleDatabase) -> None:
         self._database = database
+
+    def get_staff_agency(self, user_id: int) -> str | None:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT agency_id
+                    FROM agency_operators
+                    WHERE user_id = :user_id
+                    """,
+                    user_id=user_id,
+                )
+                row = cursor.fetchone()
+                return row[0] if row is not None else None
+            finally:
+                cursor.close()
 
     def get_user(self, user_id: int) -> AuthUser:
         with self._database.connection() as connection:
