@@ -1,0 +1,131 @@
+:host {
+  display: block;
+}
+
+.public-metrics-page {
+  max-width: 1150px;
+}
+
+.metrics-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.metrics-heading h1 {
+  margin-top: 5px;
+}
+
+.metrics-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.metrics-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.metrics-filters label {
+  display: grid;
+  min-width: 190px;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metrics-filters input {
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.metrics-filters input:focus {
+  border-color: var(--color-success);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary);
+}
+
+.metrics-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.metrics-summary article {
+  display: grid;
+  gap: 6px;
+  padding: 17px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.metrics-summary strong {
+  font-family: var(--font-display);
+  font-size: 28px;
+}
+
+.metrics-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.metrics-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.metrics-table-wrap th,
+.metrics-table-wrap td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.metrics-table-wrap th {
+  background: #f1f2f5;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.metrics-table-wrap td {
+  font-size: 13px;
+}
+
+.metrics-error {
+  margin: 0 0 12px;
+  color: var(--color-alert);
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .metrics-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metrics-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .metrics-filters label {
+    min-width: 0;
+  }
+
+  .metrics-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

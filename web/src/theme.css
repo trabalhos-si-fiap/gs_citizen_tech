@@ -1,39 +1,58 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Material+Symbols+Outlined:FILL,opsz,wght@0..1,20..48,100..700&display=swap');
 
 :root {
   color-scheme: light;
-
   --color-primary: #ebe100;
-  --color-success: #22c55e;
-  --color-success-soft: #4ade80;
-  --color-alert: #ef4444;
-
-  --color-surface: #f9f9fc;
+  --color-primary-dark: #656100;
+  --color-on-primary: #1a1c1e;
+  --color-success: #15803d;
+  --color-success-dark: #166534;
+  --color-success-soft: #dcfce7;
+  --color-info: #0284c7;
+  --color-info-dark: #0369a1;
+  --color-info-soft: #e0f2fe;
+  --color-alert: #ba1a1a;
+  --color-alert-soft: #ffdad6;
+  --color-surface: #f8fafc;
   --color-surface-bright: #ffffff;
-  --color-surface-container-low: #f3f3f6;
-  --color-surface-dim: #dadadc;
-
+  --color-surface-container-low: #f1f3f5;
+  --color-surface-container: #eeeef0;
+  --color-surface-dim: #e2e8f0;
   --color-text: #1a1c1e;
-  --color-text-on-primary: #1e1c00;
-
-  --font-family-base: 'Poppins', Arial, sans-serif;
-
-  --background-color: var(--color-surface);
-  --foreground-color: var(--color-text);
-  --border-color: var(--color-surface-dim);
-  --focus-ring-color: var(--color-text);
+  --color-text-muted: #494832;
+  --color-text-subtle: #64748b;
+  --color-border: #e2e8f0;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Hanken Grotesk', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-family-base: var(--font-body);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --shadow-card: 0 1px 3px rgba(26, 28, 30, 0.05);
+  --shadow-hover: 0 4px 12px rgba(26, 28, 30, 0.08);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  min-width: 360px;
+  min-height: 100%;
+  background: var(--color-surface);
+}
+
 body {
+  min-width: 360px;
   min-height: 100vh;
   margin: 0;
-  font-family: var(--font-family-base);
-  background: var(--background-color);
-  color: var(--foreground-color);
+  color: var(--color-text);
+  background: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -43,7 +62,43 @@ textarea {
   font: inherit;
 }
 
+button,
+a,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
 :focus-visible {
-  outline: 3px solid var(--focus-ring-color);
+  outline: 2px solid var(--color-success);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--color-primary);
+}
+
+::selection {
+  color: var(--color-text);
+  background: var(--color-primary);
 }

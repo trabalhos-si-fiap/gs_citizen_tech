@@ -1,24 +1,22 @@
-# Web - Angular
+# Reclame Já Web
 
-Estrutura inicial para o painel administrativo do Reclame Já.
+Aplicação administrativa Angular com protótipos navegáveis de acesso
+institucional, painel de zeladoria, triagem e gestão de ocorrências. As telas
+usam os tokens definidos em `src/theme.css`, alinhados à identidade visual de
+`docs_tecnicas/DESIGN.md`.
 
-## Identidade visual
-
-Os tokens globais de cores, tipografia, superfícies e foco estão em
-`src/theme.css`. A folha global `src/styles.css` importa esse tema; componentes
-Angular podem reutilizar as propriedades CSS, por exemplo
-`var(--color-primary)` e `var(--font-family-base)`.
-
-## Estrutura sugerida
-
-- src/
-- public/
-- angular.json
-- package.json
-
-## Comandos
+## Executar
 
 ```bash
 npm install
 npm start
 ```
+
+O servidor local abre em `http://localhost:4200`. O painel de indicadores
+públicos fica disponível em `/indicadores`; ele consulta
+`http://localhost:8000/v1/public/metrics` por padrão. Para apontar para outra
+API, defina `window.RECLAME_JA_API_URL` antes de iniciar a aplicação.
+
+As telas administrativas usam dados ilustrativos. Autenticação institucional,
+despachos, mudanças de status e notificações precisam ser conectados aos
+serviços correspondentes antes de uso operacional.

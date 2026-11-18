@@ -1,1 +1,8 @@
-console.log('Reclame Já Web - estrutura inicial');
+import { bootstrapApplication } from '@angular/platform-browser';
+import { provideRouter } from '@angular/router';
+import { AppComponent } from './app/app.component';
+import { appRoutes } from './app/app.routes';
+
+bootstrapApplication(AppComponent, {
+  providers: [provideRouter(appRoutes)],
+}).catch((error: unknown) => console.error('Falha ao iniciar a aplicação:', error));

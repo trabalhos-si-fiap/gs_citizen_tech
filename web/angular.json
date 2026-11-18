@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "newProjectRoot": "projects",
+  "projects": {
+    "reclame-ja-web": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/main.ts",
+            "index": "src/index.html",
+            "tsConfig": "tsconfig.app.json",
+            "styles": ["src/styles.css"],
+            "outputPath": "dist/reclame-ja-web"
+          },
+          "configurations": {
+            "production": {
+              "optimization": {
+                "fonts": false
+              },
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "1mb",
+                  "maximumError": "2mb"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "20kb",
+                  "maximumError": "30kb"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "reclame-ja-web:build:production"
+            },
+            "development": {
+              "buildTarget": "reclame-ja-web:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": false
+  }
+}

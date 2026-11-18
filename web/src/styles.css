@@ -1,61 +1,159 @@
 @import './theme.css';
 
-main {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 32px;
+body {
+  background: var(--color-surface);
 }
 
-.brand {
-  display: inline-block;
-  background: var(--color-primary);
-  color: var(--color-text-on-primary);
-  border-radius: 999px;
-  padding: 12px 22px;
-  font-weight: 700;
-  font-size: clamp(1.8rem, 2vw, 2.4rem);
-  letter-spacing: 0.02em;
-}
-
-.panel {
-  margin-top: 20px;
-  background: var(--color-surface-bright);
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: center;
-}
-
-.swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.swatch-color {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  border: 1px solid rgba(26, 28, 30, 0.08);
-}
-
-h1 {
-  margin: 0;
-  color: var(--color-text-on-primary);
-  font-weight: 700;
-}
-
+h1,
+h2,
+h3,
 p {
-  margin: 12px 0 0;
-  font-size: 1rem;
-  color: var(--color-text);
+  margin-top: 0;
 }
-printf '\n--- estrutura criada ---\n'
-find . -maxdepth 3 -type f | sed 's#^./##' | sort
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.button:hover:not(:disabled) {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+
+.button .material-symbols-outlined {
+  font-size: 19px;
+}
+
+.button-secondary {
+  color: var(--color-text);
+  background: #fff;
+  border-color: var(--color-border);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--color-surface-container-low);
+}
+
+.button-green {
+  color: #fff;
+  background: var(--color-success);
+}
+
+.button-green:hover:not(:disabled) {
+  background: var(--color-success-dark);
+}
+
+.button-spotlight {
+  color: var(--color-text);
+  background: var(--color-primary);
+  font-weight: 700;
+}
+
+.button-spotlight:hover:not(:disabled) {
+  background: #d4cb00;
+}
+
+.eyebrow {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+}
+
+.context-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+}
+
+.context-line i,
+.online i,
+.shift-pill > i,
+.official-pill i,
+.live-pill i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.demo-caption {
+  margin: 18px 0 0;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+
+.feedback-message {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #bae6fd;
+  border-radius: var(--radius-sm);
+  color: #075985;
+  background: #f0f9ff;
+  font-size: 13px;
+}
+
+.icon-button {
+  position: relative;
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.icon-button:hover {
+  background: var(--color-surface-container-low);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
