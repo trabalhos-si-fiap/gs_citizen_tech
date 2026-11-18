@@ -47,12 +47,11 @@ class _MapTabState extends State<MapTab> {
   String _activeFilter = 'Todos';
   NearbyReport? _selected;
   GeoPoint _userPosition = defaultCenter;
-  LatLng _center =
-      const LatLng(-23.5505, -46.6333); // atualizado pela localização
+  LatLng _center = LatLng(defaultCenter.latitude, defaultCenter.longitude);
   Timer? _debounce;
   final MapController _mapController = MapController();
 
-  late final NearbyStore _store = widget.nearbyStore ?? NearbyStore.shared;
+  late final NearbyStore _store = widget.nearbyStore ?? NearbyStore.forMap;
   late final LocationService _location =
       widget.locationService ?? const DeviceLocationService();
 
@@ -60,7 +59,6 @@ class _MapTabState extends State<MapTab> {
   void initState() {
     super.initState();
     _store.addListener(_onStoreChanged);
-    _locateAndLoad();
   }
 
   @override
@@ -164,6 +162,9 @@ class _MapTabState extends State<MapTab> {
               maxZoom: 19,
               backgroundColor: const Color(0xFFEAF1F8),
               onMapEvent: _onMapEvent,
+              // A câmera nasce no centro padrão; ao obter a localização do
+              // aparelho, ela é movida para lá antes da primeira consulta.
+              onMapReady: () => _locateAndLoad(moveCamera: true),
               onTap: (_, __) => setState(() => _selected = null),
             ),
             children: [

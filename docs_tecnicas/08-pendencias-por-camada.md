@@ -135,10 +135,12 @@ o estado de conclusão do modelo lógico nem do DDL.
   habilitar `ENABLE_FIREBASE_PUSH`, validar permissão, registro/rotação/remoção
   do token, push em foreground e abertura por push. Sem essa configuração, o
   polling permanece como fallback.
-- [ ] **Android:** o projeto Flutter versionado contém scaffolding iOS e macOS,
-  mas não possui diretório Android. Criar e configurar o target Android
-  (permissões de localização/câmera, Firebase e build) se Android fizer parte
-  do piloto.
+- [x] **Android:** target criado (`mobile/android/`, pacote
+  `br.fiap.reclameja.reclame_ja_mobile`) com permissões de internet e
+  localização; HTTP sem TLS liberado só no build de debug, para a API local.
+  Validado em aparelho físico (Galaxy S20 FE, Android 13): login de visitante,
+  mapa com ocorrências reais, filtro e feed. Pendentes: Firebase
+  (`google-services.json`) para push e chave de assinatura de release.
 - [ ] **Login Google:** não está integrado no app; a opção deve permanecer
   identificada como indisponível até configurar OAuth e validar o fluxo com o
   backend. Login por OTP é o fluxo disponível.

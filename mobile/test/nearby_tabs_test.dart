@@ -22,8 +22,12 @@ Map<String, dynamic> _item(String id, String category, int distance) => {
     };
 
 class _FixedLocation implements LocationService {
+  const _FixedLocation([this.point = const GeoPoint(-23.55, -46.63)]);
+
+  final GeoPoint point;
+
   @override
-  Future<GeoPoint> current() async => const GeoPoint(-23.55, -46.63);
+  Future<GeoPoint> current() async => point;
 }
 
 NearbyStore _store(List<Uri> requests) => NearbyStore(
@@ -54,7 +58,7 @@ void main() {
       isVisitor: true,
       userName: 'Visitante',
       nearbyStore: _store(requests),
-      locationService: _FixedLocation(),
+      locationService: const _FixedLocation(),
     )));
     await tester.pumpAndSettle();
 
@@ -72,7 +76,7 @@ void main() {
       isVisitor: true,
       userName: 'Visitante',
       nearbyStore: _store(requests),
-      locationService: _FixedLocation(),
+      locationService: const _FixedLocation(),
     )));
     await tester.pumpAndSettle();
 
@@ -84,13 +88,48 @@ void main() {
     expect(find.text('80 m'), findsNothing);
   });
 
+  testWidgets('map camera follows device location on first load',
+      (tester) async {
+    // Longe do centro padrão: marcadores fora da câmera não são desenhados.
+    const far = GeoPoint(-3.7319, -38.5267);
+    final store = NearbyStore(
+      client: NearbyClient(
+        baseUrl: 'http://api.test',
+        httpClient: MockClient((request) async => http.Response(
+              jsonEncode({
+                'items': [
+                  {
+                    ..._item('c3', 'risco_urbano', 30),
+                    'lat': far.latitude,
+                    'lon': far.longitude,
+                  }
+                ],
+                'next_cursor': null,
+              }),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            )),
+      ),
+    );
+    await tester.pumpWidget(_wrap(MapTab(
+      isVisitor: true,
+      userName: 'Visitante',
+      nearbyStore: store,
+      locationService: const _FixedLocation(far),
+      showTiles: false,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nearby-marker-c3')), findsOneWidget);
+  });
+
   testWidgets('map shows one marker per nearby report', (tester) async {
     final requests = <Uri>[];
     await tester.pumpWidget(_wrap(MapTab(
       isVisitor: true,
       userName: 'Visitante',
       nearbyStore: _store(requests),
-      locationService: _FixedLocation(),
+      locationService: const _FixedLocation(),
       showTiles: false,
     )));
     await tester.pumpAndSettle();

@@ -30,7 +30,7 @@ class _FeedTabState extends State<FeedTab> {
   String _activeFilter = 'Todos';
   GeoPoint? _center;
 
-  late final NearbyStore _store = widget.nearbyStore ?? NearbyStore.shared;
+  late final NearbyStore _store = widget.nearbyStore ?? NearbyStore.forFeed;
   late final LocationService _location =
       widget.locationService ?? const DeviceLocationService();
 

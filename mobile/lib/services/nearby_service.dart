@@ -165,8 +165,10 @@ class NearbyStore extends ChangeNotifier {
       : _client = client ?? NearbyClient(),
         _clock = clock ?? DateTime.now;
 
-  /// Instância compartilhada pelo mapa e pelo feed.
-  static final NearbyStore shared = NearbyStore();
+  /// Instâncias padrão de cada aba. São separadas porque mapa e feed usam
+  /// raio e filtro próprios; uma instância comum faria uma aba sobrescrever a outra.
+  static final NearbyStore forMap = NearbyStore();
+  static final NearbyStore forFeed = NearbyStore();
 
   static const cacheTtl = Duration(minutes: 10);
 
