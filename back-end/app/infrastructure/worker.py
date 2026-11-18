@@ -1,10 +1,13 @@
 """Worker durável para jobs de processamento de reportes."""
 
 import logging
+import os
 import socket
 import time
+from pathlib import Path
 from uuid import UUID, uuid4
 
+from app.healthcheck import DEFAULT_HEARTBEAT_FILE
 from app.infrastructure.classifiers import build_classifier
 from app.core.config import settings
 from app.infrastructure.database import OracleDatabase
@@ -43,7 +46,9 @@ class ReportJobWorker:
         notification_service: AgencyNotificationService | None = None,
         citizen_notification_service: CitizenNotificationService | None = None,
         visual_verification_service: VisualVerificationService | None = None,
+        heartbeat_path: Path | None = None,
     ) -> None:
+        self._heartbeat_path = heartbeat_path
         self._queue = queue
         self._repository = repository
         self._classification_service = classification_service
@@ -71,7 +76,16 @@ class ReportJobWorker:
     def enqueue(self, report_id: UUID, stage: str = "classificar") -> None:
         self._queue.enqueue(report_id, stage)
 
+    def _beat(self) -> None:
+        if self._heartbeat_path is None:
+            return
+        try:
+            self._heartbeat_path.touch()
+        except OSError:
+            logger.warning("Não foi possível atualizar o heartbeat do worker.")
+
     def run_once(self) -> bool:
+        self._beat()
         job = self._queue.reserve_next(
             self._worker_id,
             self._lease_seconds,
@@ -176,6 +190,9 @@ def main() -> None:
             visual_verification_service=VisualVerificationService(
                 settings.visual_verification_enabled,
                 settings.visual_verification_provider,
+            ),
+            heartbeat_path=Path(
+                os.environ.get("WORKER_HEARTBEAT_FILE", DEFAULT_HEARTBEAT_FILE)
             ),
         )
         logger.info("Worker de reportes iniciado.")

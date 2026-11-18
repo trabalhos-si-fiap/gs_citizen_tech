@@ -1,16 +1,29 @@
 # Runbook de operação
 
-## Ambiente local
+## Ambiente local (Docker)
 
-1. Copie `back-end/.env.example` para `back-end/.env`.
-2. Defina segredo JWT, segredo de upload e chaves de órgão.
-3. Execute `docker compose up --build`.
-4. Use `http://localhost:8000/docs` para a API e `http://localhost:8025` para MailHog.
+1. `cp .env.example .env` (configuração não secreta).
+2. `./scripts/init-secrets.sh` (gera os segredos em `secrets/`, fora do git).
+3. `docker compose up --build --wait`.
+4. API em `http://localhost:8000/docs`, painel em `http://localhost:4200` e
+   Mailpit em `http://localhost:8025`.
+5. Smoke test: `python -m unittest discover -s tests/smoke -v`.
+
+Topologia, segurança, migrations e solução de problemas estão em
+[`09-containers-docker.md`](./09-containers-docker.md).
+
+## Ambiente local sem Docker (modo memória)
+
+- Copie `back-end/.env.example` para `back-end/.env`, defina os segredos e rode
+  `uvicorn app.main:app` em `back-end/`. A API processa a fila sozinha
+  (`INLINE_JOB_PROCESSING=true`).
 
 ## Worker Oracle
 
 - Configure `REPORT_REPOSITORY=oracle` e credenciais Oracle.
-- Execute `python -m app.infrastructure.worker` em processo separado.
+- Aplique o banco com `python -m app.infrastructure.migrations`.
+- Execute `python -m app.infrastructure.worker` em processo separado e
+  `INLINE_JOB_PROCESSING=false` na API.
 - Não execute a validação visual com provedor externo enquanto `VISUAL_VERIFICATION_ENABLED=false`.
 
 ## Segurança
