@@ -1,13 +1,20 @@
 """Caso de uso de criação idempotente de reportes."""
 
+import base64
+import binascii
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.geo import bounding_box, haversine_m
 from app.models.classification import ClassificationResult, TriageRequest
 from app.models.reports import (
     ClientTimestampOutOfRange,
+    NearbyPage,
+    NearbyQuery,
+    NearbyReport,
     NewReport,
     ReportDetail,
     ReportComment,
@@ -17,6 +24,7 @@ from app.models.reports import (
     TriageState,
 )
 from app.infrastructure.repositories import (
+    InvalidReportCursor,
     ObjectStorage,
     ReportRepository,
     TriageConflict,
@@ -26,6 +34,13 @@ from app.services.routing_service import RoutingService
 CLIENT_TIMESTAMP_MAX_AGE = timedelta(days=30)
 CLIENT_TIMESTAMP_FUTURE_TOLERANCE = timedelta(minutes=1)
 UPLOAD_URL_TTL = timedelta(minutes=10)
+# Teto de candidatos lidos do banco por consulta de proximidade. Com raio de até
+# 5 km é folgado para o volume esperado; acima disso a busca mostra os mais recentes.
+NEARBY_CANDIDATE_LIMIT = 1000
+# Casas decimais publicadas no mapa (4 casas ~ 11 m): localiza a ocorrência sem
+# expor a posição exata de quem reportou. Raio e distância usam essa coordenada,
+# senão variar o raio ou consultar de três pontos revelaria a posição real.
+PUBLIC_COORDINATE_DECIMALS = 4
 
 
 class ReportService:
@@ -121,6 +136,45 @@ class ReportService:
             status,
         )
 
+    def nearby(self, query: NearbyQuery) -> NearbyPage:
+        """Ocorrências públicas no raio, uma por grupo, da mais próxima à mais distante."""
+        offset = _decode_offset(query.cursor)
+        candidates = self._repository.list_in_area(
+            bounding_box(query.latitude, query.longitude, query.radius_m),
+            NEARBY_CANDIDATE_LIMIT,
+        )
+
+        closest_by_group: dict[str, NearbyReport] = {}
+        for candidate in candidates:
+            summary = replace(
+                candidate,
+                latitude=round(candidate.latitude, PUBLIC_COORDINATE_DECIMALS),
+                longitude=round(candidate.longitude, PUBLIC_COORDINATE_DECIMALS),
+            )
+            if query.category is not None and summary.category != query.category:
+                continue
+            if query.status is not None and summary.status != query.status:
+                continue
+            distance = haversine_m(
+                query.latitude, query.longitude, summary.latitude, summary.longitude
+            )
+            if distance > query.radius_m:
+                continue
+            current = closest_by_group.get(summary.group_id)
+            if current is None or distance < current.distance_m:
+                closest_by_group[summary.group_id] = NearbyReport(summary, distance)
+
+        ordered = sorted(
+            closest_by_group.values(),
+            key=lambda item: (item.distance_m, str(item.summary.id)),
+        )
+        page = ordered[offset : offset + query.limit]
+        has_more = offset + query.limit < len(ordered)
+        return NearbyPage(
+            items=page,
+            next_cursor=_encode_offset(offset + query.limit) if has_more else None,
+        )
+
     def add_comment(
         self,
         report_id: UUID,
@@ -190,3 +244,20 @@ class ReportService:
             raise ClientTimestampOutOfRange(
                 "client_created_at fora da janela permitida."
             )
+
+
+def _encode_offset(offset: int) -> str:
+    return base64.urlsafe_b64encode(str(offset).encode()).decode().rstrip("=")
+
+
+def _decode_offset(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        offset = int(base64.urlsafe_b64decode(padded.encode()).decode())
+    except (binascii.Error, ValueError, UnicodeDecodeError) as error:
+        raise InvalidReportCursor from error
+    if offset < 0:
+        raise InvalidReportCursor
+    return offset

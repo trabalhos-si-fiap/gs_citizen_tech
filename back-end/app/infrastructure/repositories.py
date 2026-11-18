@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import UUID
 
+from app.core.geo import GeoBox
 from app.infrastructure.database import OracleDatabase
 from app.infrastructure.geohash import encode_geohash
 from app.models.auth import AuthUser
@@ -129,6 +130,10 @@ class ReportRepository(Protocol):
     ) -> ReportDetail: ...
 
     def list_moderation(self, limit: int) -> list[ReportSummary]: ...
+
+    def list_in_area(self, box: GeoBox, max_items: int) -> list[ReportSummary]:
+        """Reportes públicos (fora de moderação) no retângulo, mais recentes primeiro."""
+        ...
 
     def export_user_data(self, user_id: int) -> dict[str, object]: ...
 
@@ -855,6 +860,27 @@ class InMemoryReportRepository:
                     len(self._confirmations.get(report_id, set())),
                 )
                 for report_id, persisted in items[:limit]
+            ]
+
+    def list_in_area(self, box: GeoBox, max_items: int) -> list[ReportSummary]:
+        with self._lock:
+            items = [
+                (report_id, persisted)
+                for report_id, (_, persisted) in self._reports.items()
+                if persisted.triage_state != TriageState.IN_MODERATION
+                and box.contains(
+                    self._report_inputs[report_id].latitude,
+                    self._report_inputs[report_id].longitude,
+                )
+            ]
+            items.sort(key=lambda item: item[1].received_at, reverse=True)
+            return [
+                self._summary_for(
+                    self._report_inputs[report_id],
+                    persisted,
+                    len(self._confirmations.get(report_id, set())),
+                )
+                for report_id, persisted in items[:max_items]
             ]
 
     def mark_for_moderation(self, report_id: UUID) -> None:
@@ -2342,6 +2368,91 @@ class OracleReportRepository:
         if isinstance(payload, dict):
             return payload
         raise RuntimeError("Payload de evento inválido.")
+
+    def list_in_area(self, box: GeoBox, max_items: int) -> list[ReportSummary]:
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                # O retângulo usa ix_reports_lat_lon; o raio exato é aplicado no serviço.
+                cursor.execute(
+                    """
+                    WITH area_reports AS (
+                        SELECT r.id, r.protocol, r.category, r.lat, r.lon,
+                               r.received_at, r.group_id
+                        FROM reports r
+                        WHERE r.lat BETWEEN :min_lat AND :max_lat
+                          AND r.lon BETWEEN :min_lon AND :max_lon
+                          AND r.triage_state <> 'in_moderation'
+                        ORDER BY r.received_at DESC
+                        FETCH FIRST :max_items ROWS ONLY
+                    )
+                    SELECT r.id,
+                           r.protocol,
+                           CASE (
+                               SELECT e.type FROM report_events e
+                               WHERE e.report_id = r.id
+                                 AND e.type IN (
+                                     'recebido', 'encaminhado', 'em_andamento',
+                                     'resolvido', 'reaberto'
+                                 )
+                               ORDER BY e.id DESC
+                               FETCH FIRST 1 ROW ONLY
+                           )
+                               WHEN 'reaberto' THEN 'em_andamento'
+                               WHEN 'encaminhado' THEN 'encaminhado'
+                               WHEN 'em_andamento' THEN 'em_andamento'
+                               WHEN 'resolvido' THEN 'resolvido'
+                               ELSE 'recebido'
+                           END AS status,
+                           COALESCE(
+                               (
+                                   SELECT JSON_VALUE(
+                                       e.payload, '$.category'
+                                       RETURNING VARCHAR2(32) NULL ON ERROR
+                                   )
+                                   FROM report_events e
+                                   WHERE e.report_id = r.id
+                                     AND e.type IN (
+                                         'classificado',
+                                         'classificacao_confirmada',
+                                         'classificacao_corrigida'
+                                     )
+                                   ORDER BY e.id DESC
+                                   FETCH FIRST 1 ROW ONLY
+                               ),
+                               r.category
+                           ) AS category,
+                           r.lat,
+                           r.lon,
+                           r.received_at,
+                           r.group_id,
+                           NVL(g.confirmation_count, 0)
+                    FROM area_reports r
+                    LEFT JOIN report_groups g ON g.id = r.group_id
+                    ORDER BY r.received_at DESC
+                    """,
+                    min_lat=box.min_lat,
+                    max_lat=box.max_lat,
+                    min_lon=box.min_lon,
+                    max_lon=box.max_lon,
+                    max_items=max_items,
+                )
+                return [
+                    ReportSummary(
+                        id=UUID(row[0]),
+                        protocol=row[1],
+                        status=ReportStatus(row[2]),
+                        category=ReportCategory(row[3]) if row[3] else None,
+                        latitude=float(row[4]),
+                        longitude=float(row[5]),
+                        received_at=row[6],
+                        group_id=str(row[7]),
+                        confirmation_count=int(row[8]),
+                    )
+                    for row in cursor.fetchall()
+                ]
+            finally:
+                cursor.close()
 
     def list_user_reports(
         self,

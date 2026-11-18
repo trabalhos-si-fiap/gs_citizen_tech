@@ -33,11 +33,15 @@ as telas mobile e os componentes Angular.
 
 ### Prioridade alta — completar o fluxo funcional
 
-- [ ] **Publicar ocorrências por proximidade.** O contrato
-  [`04-openapi.yaml`](./04-openapi.yaml) descreve `GET /v1/reports/nearby`, mas
-  a rota não está registrada em `back-end/app/api/routes/`. Implementar
-  latitude/longitude, raio, filtros, ordenação/paginação e resposta pública
-  mínima, sem dados pessoais.
+- [x] **Publicar ocorrências por proximidade.** `GET /v1/reports/nearby` é
+  pública e recebe latitude/longitude, raio (50–5000 m), categoria, status,
+  `limit` e cursor opaco. O banco devolve candidatos num retângulo
+  (`ix_reports_lat_lon`, migração V006) e o serviço aplica haversine, mantém um
+  reporte por grupo (o mais próximo) e ordena por distância. A resposta não traz
+  protocolo, descrição, foto ou autor; coordenadas saem com 4 casas (~11 m) e raio
+  e distância são calculados sobre elas, para que não seja possível trilaterar a
+  posição exata. Reportes em moderação ficam fora. Limite conhecido: no máximo
+  1000 candidatos por consulta (os mais recentes), suficiente para o raio máximo.
 - [ ] **Conectar o agrupamento automático de duplicados.** `report_groups` e
   confirmações existem, mas reportes novos são criados sem uma busca/decisão
   completa de correspondência por distância, categoria e janela temporal.
