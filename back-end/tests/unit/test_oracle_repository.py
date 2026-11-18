@@ -471,5 +471,50 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual(item.confirmation_count, 4)
 
 
+
+class OracleTriageSweepTests(unittest.TestCase):
+    def test_list_triage_due_selects_classified_reports_without_triage(self) -> None:
+        report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+        cutoff = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [(report_id,)]
+        repository = OracleReportRepository(database)
+
+        due = repository.list_triage_due(cutoff, limit=25)
+
+        self.assertEqual(due, [UUID(report_id)])
+        self.assertEqual(cursor.query_parameters, {"cutoff": cutoff, "limit": 25})
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("c.type = 'classificado'", query)
+        self.assertIn("c.created_at <= :cutoff", query)
+        self.assertIn(
+            "'classificacao_confirmada', 'classificacao_corrigida', 'enviado_moderacao'",
+            query,
+        )
+        self.assertTrue(cursor.closed)
+
+    def test_auto_triage_calls_package_without_citizen(self) -> None:
+        database = FakeDatabase()
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+        result = ClassificationResult(
+            category="risco_urbano",
+            subcategory=None,
+            urgency="media",
+            confidence=0.9,
+            immediate_risk=False,
+            model="fake",
+            source="ai",
+        )
+
+        repository.apply_triage(report_id, None, "auto", result, None, None)
+
+        cursor = database.fake_connection.fake_cursor
+        self.assertEqual(cursor.call_name, "PKG_ROTEAMENTO.aplicar_triagem")
+        self.assertEqual(cursor.call_parameters[:3], [str(report_id), None, "auto"])
+        self.assertTrue(database.fake_connection.committed)
+
+
 if __name__ == "__main__":
     unittest.main()

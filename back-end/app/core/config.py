@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     report_job_poll_seconds: float = Field(default=1.0, gt=0)
     report_job_lease_seconds: int = Field(default=90, gt=0)
     report_job_max_attempts: int = Field(default=6, gt=0)
+    # D10: sem confirmação do cidadão nesse prazo, a sugestão é aplicada.
+    triage_auto_confirm_minutes: int = Field(default=10, gt=0)
+    triage_sweep_interval_seconds: float = Field(default=60, gt=0)
     # true: a API também executa jobs (modo memória/dev sem worker).
     # false: a API só enfileira; o container worker processa a fila.
     inline_job_processing: bool = True

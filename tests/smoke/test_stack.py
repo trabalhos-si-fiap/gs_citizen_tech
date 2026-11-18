@@ -125,6 +125,7 @@ class StackSmokeTests(unittest.TestCase):
 
         detail = wait_for(classified, timeout=30)
         self.assertIsNotNone(detail, "worker não classificou o reporte")
+        self.assertEqual(detail["triage_state"], "awaiting_user")
 
         # Mapa público: sem token, consulta o Oracle por proximidade.
         status, nearby, _ = request(
@@ -135,6 +136,61 @@ class StackSmokeTests(unittest.TestCase):
         self.assertIn(report_id, items)
         self.assertNotIn("description", items[report_id])
         self.assertLessEqual(items[report_id]["distance_m"], 10)
+
+
+# Roda a varredura de triagem no worker com o relógio adiantado, sem esperar
+# os 10 minutos reais de TRIAGE_AUTO_CONFIRM_MINUTES.
+SWEEP_WITH_CLOCK_AHEAD = """
+from datetime import datetime, timedelta, timezone
+from app.core.config import settings
+from app.infrastructure.database import OracleDatabase
+from app.infrastructure.repositories import OracleReportRepository
+from app.services.report_service import ReportService
+database = OracleDatabase(settings)
+database.open()
+ahead = datetime.now(timezone.utc) + timedelta(minutes=settings.triage_auto_confirm_minutes + 1)
+service = ReportService(OracleReportRepository(database), None, clock=lambda: ahead)
+print(service.auto_confirm_due_triage(limit=500))
+database.close()
+"""
+
+
+class TriageAutoConfirmSmokeTests(unittest.TestCase):
+    def test_pending_triage_is_auto_confirmed_and_forwarded(self) -> None:
+        email = f"smoke-{uuid.uuid4().hex[:10]}@example.com"
+        request("POST", f"{API}/v1/auth/login",
+                {"email": email, "consent": {"version": "2026-11", "accepted_age": True}})
+        code = wait_for(lambda: otp_from_mailpit(email), timeout=20)
+        _, session, _ = request("POST", f"{API}/v1/auth/login", {"email": email, "code": code})
+        token = session["access_token"]
+        report_id = str(uuid.uuid4())
+        status, created, _ = request("POST", f"{API}/v1/reports", {
+            "id": report_id,
+            "description": "Semáforo apagado no cruzamento (teste)",
+            "category": "risco_urbano",
+            "lat": round(-23.55 + random.uniform(-0.05, 0.05), 6),
+            "lon": round(-46.63 + random.uniform(-0.05, 0.05), 6),
+            "client_created_at": datetime.now(timezone.utc).isoformat(),
+        }, token)
+        self.assertEqual(status, 201, created)
+        wait_for(
+            lambda: request("GET", f"{API}/v1/reports/{report_id}", token=token)[1]
+            .get("triage_state") == "awaiting_user",
+            timeout=30,
+        )
+
+        result = subprocess.run(
+            ["docker", "compose", "exec", "-T", "worker", "python", "-c",
+             SWEEP_WITH_CLOCK_AHEAD],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+
+        _, detail, _ = request("GET", f"{API}/v1/reports/{report_id}", token=token)
+        self.assertEqual(detail["triage_state"], "auto_confirmed")
+        self.assertEqual(detail["status"], "encaminhado")
+        actors = {(event["type"], event["actor"]) for event in detail["timeline"]}
+        self.assertIn(("classificacao_confirmada", "system"), actors)
 
 
 class ContainerRuntimeTests(unittest.TestCase):
