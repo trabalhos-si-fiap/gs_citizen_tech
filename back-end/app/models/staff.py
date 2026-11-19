@@ -141,3 +141,19 @@ class StaffRedirectRequest(BaseModel):
         if not value:
             raise ValueError("Justificativa obrigatória.")
         return value
+
+
+class StaffModerationRequest(BaseModel):
+    """Decisão da moderação; categoria só na aprovação (reclassifica e roteia)."""
+
+    justification: str = Field(max_length=1000)
+    category: ReportCategory | None = None
+    subcategory: str | None = Field(default=None, max_length=64)
+
+    @field_validator("justification")
+    @classmethod
+    def _justification_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Justificativa obrigatória.")
+        return value

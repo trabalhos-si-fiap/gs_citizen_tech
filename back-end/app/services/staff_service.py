@@ -6,13 +6,21 @@ from uuid import UUID
 
 from app.infrastructure.repositories import (
     AuthRepository,
+    TriageConflict,
     InvalidAgencyAction,
     ReportNotFound,
     ReportRepository,
     StaffNotAuthorized,
     StaffTransitionNotAllowed,
 )
-from app.models.reports import ReportCategory, ReportDetail, ReportStatus
+from app.models.classification import ClassificationResult
+from app.models.reports import (
+    ReportCategory,
+    ReportDetail,
+    ReportStatus,
+    ReportSummary,
+    TriageState,
+)
 from app.models.staff import (
     STAFF_ROLES,
     StaffContext,
@@ -25,6 +33,11 @@ STATUS_EVENTS = {"em_andamento", "resolvido"}
 # Prazo dado ao novo órgão quando o redirecionamento não informa outro.
 REDIRECT_DEADLINE_HOURS = 72
 REDIRECT_ROLES = {"agency", "manager", "admin"}
+MODERATION_ROLES = {"moderator", "admin"}
+
+
+class ModerationNeedsRoute(Exception):
+    """Aprovação de reporte sem órgão exige uma categoria com regra de roteamento."""
 
 
 class StaffService:
@@ -199,6 +212,85 @@ class StaffService:
             ),
             None,
         )
+        return detail, event_id
+
+    def moderation_queue(self, context: StaffContext, limit: int) -> list[ReportSummary]:
+        if context.role not in MODERATION_ROLES:
+            raise StaffNotAuthorized
+        return self._reports.list_moderation(limit)
+
+    def moderate(
+        self,
+        context: StaffContext,
+        report_id: UUID,
+        decision: str,
+        justification: str,
+        category: ReportCategory | None,
+        subcategory: str | None,
+    ) -> tuple[ReportDetail, int | None]:
+        """Aprova ou rejeita um reporte da fila; devolve o evento a notificar."""
+        if context.role not in MODERATION_ROLES:
+            raise StaffNotAuthorized
+        if decision not in {"approve", "reject"}:
+            raise InvalidAgencyAction
+        current = self._reports.get_detail(report_id)
+        if current.triage_state != TriageState.IN_MODERATION:
+            raise StaffTransitionNotAllowed
+
+        classification = None
+        route = None
+        deadline = None
+        if decision == "approve":
+            if category is not None:
+                previous = current.classification
+                try:
+                    classification = ClassificationResult(
+                        category=category,
+                        subcategory=subcategory,
+                        urgency=previous.urgency if previous else None,
+                        confidence=1.0,
+                        immediate_risk=previous.immediate_risk if previous else None,
+                        model="moderacao",
+                        source="user",
+                    )
+                except ValueError as error:
+                    raise InvalidAgencyAction from error
+            if classification is not None or current.agency_id is None:
+                effective = classification or current.classification
+                if effective is None:
+                    raise ModerationNeedsRoute
+                route = self._routing.find_rule(
+                    effective.category, effective.subcategory
+                )
+                if route is None:
+                    raise ModerationNeedsRoute
+                deadline = self._clock() + timedelta(hours=route.deadline_hours)
+        elif category is not None:
+            raise InvalidAgencyAction
+
+        try:
+            detail = self._reports.resolve_moderation(
+                report_id,
+                decision,
+                justification,
+                actor=f"{context.role}:{context.user_id}",
+                actor_user_id=context.user_id,
+                classification=classification,
+                route=route,
+                deadline=deadline,
+            )
+        except TriageConflict as error:
+            raise StaffTransitionNotAllowed from error
+        event_id = None
+        if route is not None:
+            event_id = next(
+                (
+                    event.id
+                    for event in reversed(detail.timeline)
+                    if event.type == "encaminhado"
+                ),
+                None,
+            )
         return detail, event_id
 
 

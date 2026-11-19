@@ -162,6 +162,24 @@ class ReportRepository(Protocol):
         """Novo evento 'encaminhado' para outro órgão; o status volta a encaminhado."""
         ...
 
+    def resolve_moderation(
+        self,
+        report_id: UUID,
+        decision: str,
+        justification: str,
+        *,
+        actor: str,
+        actor_user_id: int | None,
+        classification: ClassificationResult | None,
+        route: RouteDecision | None,
+        deadline: datetime | None,
+    ) -> ReportDetail:
+        """Aprova (opcionalmente reclassifica e encaminha) ou rejeita.
+
+        TriageConflict se o reporte não estiver em moderação.
+        """
+        ...
+
     def list_staff_reports(
         self,
         agency_id: str | None,
@@ -907,6 +925,51 @@ class InMemoryReportRepository:
                 f"citizen:{user_id}",
             )
 
+    def resolve_moderation(
+        self,
+        report_id: UUID,
+        decision: str,
+        justification: str,
+        *,
+        actor: str,
+        actor_user_id: int | None,
+        classification: ClassificationResult | None,
+        route: RouteDecision | None,
+        deadline: datetime | None,
+    ) -> ReportDetail:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            if stored is None:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            if persisted.triage_state != TriageState.IN_MODERATION:
+                raise TriageConflict
+            status = persisted.status
+            if decision == "reject":
+                triage_state = TriageState.REJECTED
+                self._append_event(
+                    report_id, "moderacao_rejeitada", actor, justification
+                )
+            else:
+                triage_state = TriageState.CONFIRMED
+                if classification is not None:
+                    self._classifications[report_id] = classification
+                    self._append_event(report_id, "classificacao_corrigida", actor)
+                self._append_event(
+                    report_id, "moderacao_aprovada", actor, justification
+                )
+                if route is not None:
+                    self._routes[report_id] = route
+                    if deadline is not None:
+                        self._deadlines[report_id] = deadline
+                    status = ReportStatus.FORWARDED
+                    self._append_event(report_id, "encaminhado", "system")
+            self._reports[report_id] = (
+                owner_id,
+                replace(persisted, status=status, triage_state=triage_state),
+            )
+            return self.get_detail(report_id)
+
     def redirect_report(
         self,
         report_id: UUID,
@@ -1129,7 +1192,8 @@ class InMemoryReportRepository:
             items = [
                 (report_id, persisted)
                 for report_id, (_, persisted) in self._reports.items()
-                if persisted.triage_state != TriageState.IN_MODERATION
+                if persisted.triage_state
+                not in {TriageState.IN_MODERATION, TriageState.REJECTED}
                 and box.contains(
                     self._report_inputs[report_id].latitude,
                     self._report_inputs[report_id].longitude,
@@ -2050,6 +2114,102 @@ class OracleReportRepository:
                     connection.rollback()
         return self.get_detail(report_id)
 
+    def resolve_moderation(
+        self,
+        report_id,
+        decision,
+        justification,
+        *,
+        actor,
+        actor_user_id,
+        classification,
+        route,
+        deadline,
+    ):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    "SELECT triage_state FROM reports WHERE id = :report_id FOR UPDATE",
+                    report_id=str(report_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ReportNotFound
+                if row[0] != TriageState.IN_MODERATION.value:
+                    raise TriageConflict
+
+                def add_event(event_type, event_actor, *, note=None, when=None, data=None):
+                    cursor.execute(
+                        """
+                        INSERT INTO report_events
+                            (report_id, type, actor, justification, deadline, payload)
+                        VALUES (
+                            :report_id, :event_type, :actor, :justification,
+                            :deadline, :payload
+                        )
+                        """,
+                        report_id=str(report_id),
+                        event_type=event_type,
+                        actor=event_actor,
+                        justification=note,
+                        deadline=when,
+                        payload=data,
+                    )
+
+                if decision == "reject":
+                    triage_state = TriageState.REJECTED.value
+                    add_event("moderacao_rejeitada", actor, note=justification)
+                else:
+                    triage_state = TriageState.CONFIRMED.value
+                    if classification is not None:
+                        add_event(
+                            "classificacao_corrigida",
+                            actor,
+                            data=classification.model_dump_json(),
+                        )
+                    add_event("moderacao_aprovada", actor, note=justification)
+                    if route is not None:
+                        add_event(
+                            "encaminhado",
+                            "system",
+                            when=deadline,
+                            data=json.dumps(
+                                {
+                                    "rule_id": route.rule_id,
+                                    "rule_version": route.rule_version,
+                                    "territory_id": route.territory_id,
+                                    "agency_id": route.agency_id,
+                                    "agency_name": route.agency_name,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+                cursor.execute(
+                    "UPDATE reports SET triage_state = :triage_state WHERE id = :report_id",
+                    triage_state=triage_state,
+                    report_id=str(report_id),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (actor_user_id, action, resource_type, resource_id, justification)
+                    VALUES (:actor_user_id, :action, 'report', :resource_id, :justification)
+                    """,
+                    actor_user_id=actor_user_id,
+                    action=f"moderation_{decision}",
+                    resource_id=str(report_id),
+                    justification=justification,
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+        return self.get_detail(report_id)
+
     _STAFF_BASE_SQL = """
         WITH latest_status AS (
             SELECT report_id, type,
@@ -2748,7 +2908,10 @@ class OracleReportRepository:
                           'classificacao_corrigida',
                           'encaminhado',
                           'enviado_moderacao',
-                          'vinculado_grupo'
+                          'vinculado_grupo',
+                          'sinalizado',
+                          'moderacao_aprovada',
+                          'moderacao_rejeitada'
                       )
                     ORDER BY id
                     """,
@@ -2780,10 +2943,14 @@ class OracleReportRepository:
                         agency_id = event_data.get("agency_id")
                         agency_name = event_data.get("agency_name")
                         deadline = event_deadline
-                    elif event_type == "enviado_moderacao":
+                    elif event_type in ("enviado_moderacao", "sinalizado"):
                         triage_state = TriageState.IN_MODERATION
                     elif event_type == "vinculado_grupo":
                         triage_state = TriageState.AUTO_CONFIRMED
+                    elif event_type == "moderacao_aprovada":
+                        triage_state = TriageState.CONFIRMED
+                    elif event_type == "moderacao_rejeitada":
+                        triage_state = TriageState.REJECTED
 
                 canonical_id = row[13]
                 if agency_id is None and canonical_id != row[0]:
@@ -3111,7 +3278,7 @@ class OracleReportRepository:
                         FROM reports r
                         WHERE r.lat BETWEEN :min_lat AND :max_lat
                           AND r.lon BETWEEN :min_lon AND :max_lon
-                          AND r.triage_state <> 'in_moderation'
+                          AND r.triage_state NOT IN ('in_moderation', 'rejected')
                         ORDER BY r.received_at DESC
                         FETCH FIRST :max_items ROWS ONLY
                     )
@@ -3524,7 +3691,7 @@ class OracleReportRepository:
                       AND r.lon BETWEEN :min_lon AND :max_lon
                       AND r.received_at >= :since
                       AND r.group_id <> (SELECT group_id FROM reports WHERE id = :report_id)
-                      AND r.triage_state <> 'in_moderation'
+                      AND r.triage_state NOT IN ('in_moderation', 'rejected')
                       -- Grupo aberto: canônico não resolvido nem em moderação.
                       AND NOT EXISTS (
                           SELECT 1 FROM report_events m

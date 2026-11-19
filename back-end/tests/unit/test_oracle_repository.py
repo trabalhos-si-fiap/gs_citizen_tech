@@ -476,7 +476,7 @@ class OracleAreaQueryTests(unittest.TestCase):
         query = " ".join(cursor.executed_query.split())
         self.assertIn("r.lat BETWEEN :min_lat AND :max_lat", query)
         self.assertIn("r.lon BETWEEN :min_lon AND :max_lon", query)
-        self.assertIn("r.triage_state <> 'in_moderation'", query)
+        self.assertIn("r.triage_state NOT IN ('in_moderation', 'rejected')", query)
         self.assertIn("ORDER BY r.received_at DESC", query)
         self.assertTrue(cursor.closed)
         self.assertEqual(len(found), 1)
