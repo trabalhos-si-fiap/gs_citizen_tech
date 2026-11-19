@@ -173,20 +173,34 @@ class ReportStore {
       _ => 'Recebido',
     };
     final rawTimeline = item['timeline'];
+    var forwardedBefore = false;
     final timeline = rawTimeline is List
         ? rawTimeline.whereType<Map>().map((event) {
             final date = DateTime.tryParse(
-                  event['created_at']?.toString() ?? '',
+                  _asUtcIso(event['created_at']?.toString() ?? ''),
                 ) ??
                 receivedAt;
+            final type = event['type']?.toString() ?? '';
+            // Um segundo "encaminhado" é um redirecionamento entre órgãos.
+            final title = type == 'encaminhado' && forwardedBefore
+                ? 'Redirecionado a outro órgão'
+                : _eventTitles[type] ?? 'Atualização';
+            if (type == 'encaminhado') forwardedBefore = true;
             return ReportEvent(
-              title: event['type']?.toString() ?? 'Atualização',
-              time: date.toLocal().toString(),
+              title: title,
+              time: _formatDateTime(date),
               desc: event['justification']?.toString() ?? '',
-              actor: event['actor']?.toString() ?? 'Sistema',
+              actor: _actorLabel(event['actor']?.toString() ?? ''),
             );
           }).toList()
         : <ReportEvent>[];
+    final classification = item['classification'];
+    final subcategory = classification is Map
+        ? classification['subcategory']?.toString() ?? ''
+        : '';
+    final deadline = DateTime.tryParse(
+      _asUtcIso(item['deadline']?.toString() ?? ''),
+    );
     final photo = item['photo_url']?.toString();
     return Report(
       id: item['protocol']?.toString() ?? item['id'].toString(),
@@ -198,7 +212,7 @@ class ReportStore {
       location: '${item['lat'] ?? ''}, ${item['lon'] ?? ''}',
       details: '',
       category: category,
-      subcategory: '',
+      subcategory: _humanize(subcategory),
       status: status,
       organ: item['agency'] is Map
           ? (item['agency'] as Map)['name']?.toString() ?? ''
@@ -206,7 +220,8 @@ class ReportStore {
       confirmationCount: (item['confirmation_count'] as num?)?.toInt() ?? 0,
       clientCreatedAt: receivedAt.toLocal().toString(),
       imageUrl: photo,
-      forecast: item['deadline']?.toString() ?? '',
+      forecast: deadline == null ? '' : 'Prazo: ${_formatDateTime(deadline)}',
+
       timeline: timeline,
       comments: const [],
     );
@@ -409,4 +424,56 @@ class ReportStore {
   void _notify() {
     _reportsController.add(List.unmodifiable(_reports));
   }
+}
+
+
+const _eventTitles = {
+  'recebido': 'Reporte recebido',
+  'classificado': 'Classificado automaticamente',
+  'classificacao_confirmada': 'Classificação confirmada',
+  'classificacao_corrigida': 'Classificação corrigida',
+  'encaminhado': 'Encaminhado ao órgão',
+  'em_andamento': 'Atendimento iniciado',
+  'resolvido': 'Resolvido',
+  'reaberto': 'Reaberto',
+  'contestado': 'Contestado pelo órgão',
+  'enviado_moderacao': 'Em análise pela moderação',
+  'vinculado_grupo': 'Agrupado a um reporte igual',
+  'confirmacao_adicionada': 'Outro cidadão confirmou',
+  'cobrado': 'Você cobrou o órgão',
+  'sinalizado': 'Sinalizado para revisão',
+  'moderacao_aprovada': 'Aprovado pela moderação',
+  'moderacao_rejeitada': 'Recusado pela moderação',
+};
+
+String _actorLabel(String actor) {
+  if (actor.isEmpty || actor == 'system') return 'Sistema';
+  if (actor.startsWith('agency')) return 'Órgão responsável';
+  if (actor.startsWith('citizen')) return 'Cidadão';
+  if (actor.startsWith('moderator') || actor.startsWith('admin')) {
+    return 'Moderação';
+  }
+  if (actor.startsWith('manager')) return 'Gestão municipal';
+  return 'Prefeitura';
+}
+
+/// O backend devolve alguns horários sem fuso; eles estão em UTC.
+String _asUtcIso(String value) {
+  if (value.isEmpty) return value;
+  final hasZone = value.endsWith('Z') ||
+      RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(value);
+  return hasZone ? value : '${value}Z';
+}
+
+String _formatDateTime(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year} '
+      '${two(local.hour)}:${two(local.minute)}';
+}
+
+String _humanize(String code) {
+  if (code.isEmpty || code == 'a_classificar') return '';
+  final text = code.replaceAll('_', ' ');
+  return text[0].toUpperCase() + text.substring(1);
 }
