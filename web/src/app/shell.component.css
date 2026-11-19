@@ -500,3 +500,8 @@
     padding: 18px 16px 28px;
   }
 }
+
+a.sla-summary {
+  color: inherit;
+  text-decoration: none;
+}

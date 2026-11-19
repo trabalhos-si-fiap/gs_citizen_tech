@@ -1,7 +1,8 @@
-import { Component, OnDestroy, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ROLE_LABELS } from './auth.models';
 import { AuthService } from './auth.service';
+import { StaffApiService } from './staff-api.service';
 
 @Component({
   selector: 'app-shell',
@@ -27,29 +28,31 @@ import { AuthService } from './auth.service';
           </a>
           <a routerLink="/ocorrencias" routerLinkActive="active" title="Gestão de Ocorrências">
             <span class="material-symbols-outlined" aria-hidden="true">warning</span> Gestão de Ocorrências
-            <span class="nav-count">12</span>
+            @if (waiting() !== null) {
+              <span class="nav-count" title="Aguardando atendimento">{{ waiting() }}</span>
+            }
           </a>
-          <a routerLink="/dashboard" fragment="mapa" title="Mapa de Operações">
-            <span class="material-symbols-outlined" aria-hidden="true">map</span> Mapa de Operações
-          </a>
-          <a routerLink="/dashboard" fragment="equipes" title="Equipes & Frotas">
-            <span class="material-symbols-outlined" aria-hidden="true">local_shipping</span> Equipes &amp; Frotas
-            <span class="nav-soon">Em Breve</span>
+          @if (canModerate) {
+            <a routerLink="/moderacao" routerLinkActive="active" title="Fila de moderação">
+              <span class="material-symbols-outlined" aria-hidden="true">gavel</span> Moderação
+            </a>
+          }
+          <a routerLink="/dashboard" fragment="regioes" title="Regiões com mais reportes">
+            <span class="material-symbols-outlined" aria-hidden="true">map</span> Regiões
           </a>
           <a routerLink="/indicadores" routerLinkActive="active" title="Indicadores Públicos">
-            <span class="material-symbols-outlined" aria-hidden="true">analytics</span> Relatórios
-          </a>
-          <a routerLink="/dashboard" fragment="configuracoes" title="Configurações da Secretaria">
-            <span class="material-symbols-outlined" aria-hidden="true">tune</span> Configurações da Secretaria
+            <span class="material-symbols-outlined" aria-hidden="true">analytics</span> Indicadores públicos
           </a>
         </nav>
 
         <div class="sidebar-bottom">
-          <div class="sla-summary">
-            <span class="material-symbols-outlined" aria-hidden="true">verified</span>
-            <span><small>SLA Diário</small><strong>94.2% Concluído</strong></span>
-            <span class="material-symbols-outlined arrow" aria-hidden="true">chevron_right</span>
-          </div>
+          @if (overdue() !== null) {
+            <a class="sla-summary" routerLink="/ocorrencias" title="Reportes com prazo vencido">
+              <span class="material-symbols-outlined" aria-hidden="true">{{ overdue() ? 'warning' : 'verified' }}</span>
+              <span><small>Prazos vencidos</small><strong>{{ overdue() }} {{ overdue() === 1 ? 'reporte' : 'reportes' }}</strong></span>
+              <span class="material-symbols-outlined arrow" aria-hidden="true">chevron_right</span>
+            </a>
+          }
           <button class="logout-link" type="button" (click)="auth.logout()">
             <span class="material-symbols-outlined" aria-hidden="true">logout</span> Encerrar Expediente
           </button>
@@ -64,10 +67,6 @@ import { AuthService } from './auth.service';
             <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
           </div>
           <div class="topbar-spacer"></div>
-          <div class="shift-pill" [class.dashboard-hidden]="isDashboard"><i></i><span>Expediente Ordinário:<strong>08:00 – 18:00</strong></span></div>
-          <button class="icon-button notification-button" type="button" aria-label="Notificações">
-            <span class="material-symbols-outlined" aria-hidden="true">notifications</span><b>3</b>
-          </button>
           <div class="profile">
             <span class="profile-identity" [class.dashboard-hidden]="isDashboard"><strong>{{ auth.profile()?.email }}</strong><small>{{ roleLabel }}</small></span>
             <span class="avatar material-symbols-outlined" aria-hidden="true">person</span>
@@ -79,8 +78,11 @@ import { AuthService } from './auth.service';
   `,
   styleUrl: './shell.component.css',
 })
-export class ShellComponent implements OnDestroy {
+export class ShellComponent implements OnInit, OnDestroy {
   readonly auth = inject(AuthService);
+  private readonly api = inject(StaffApiService);
+  readonly waiting = signal<number | null>(null);
+  readonly overdue = signal<number | null>(null);
   private readonly router = inject(Router);
   private readonly navigationSubscription = this.router.events.subscribe((event) => {
     if (event instanceof NavigationEnd) {
@@ -98,6 +100,20 @@ export class ShellComponent implements OnDestroy {
   get roleLabel(): string {
     const role = this.auth.profile()?.role ?? '';
     return (ROLE_LABELS[role] ?? role).toUpperCase();
+  }
+
+  get canModerate(): boolean {
+    return ['moderator', 'admin'].includes(this.auth.profile()?.role ?? '');
+  }
+
+  async ngOnInit(): Promise<void> {
+    try {
+      const summary = await this.api.summary();
+      this.waiting.set(summary.by_status.encaminhado);
+      this.overdue.set(summary.overdue);
+    } catch {
+      // Contadores são complementares; as telas mostram os erros.
+    }
   }
 
   ngOnDestroy(): void {
