@@ -660,6 +660,98 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/staff/reports/{id}/redirect:
+    post:
+      tags: [staff]
+      summary: Redireciona o reporte a outro órgão (agency no próprio escopo, manager e admin)
+      description: >-
+        Registra novo evento `encaminhado` com a justificativa, volta o status
+        para `encaminhado`, define novo prazo (72 h se não informado), avisa o
+        novo órgão e o cidadão. O órgão anterior deixa de ver o reporte.
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffRedirectRequest" }
+      responses:
+        "200":
+          description: Reporte redirecionado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/moderation:
+    get:
+      tags: [staff]
+      summary: Fila de moderação (moderator e admin)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Reportes em moderação
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, count]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ReportSummary" }
+                  count: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/moderation/{id}/{decision}:
+    post:
+      tags: [staff]
+      summary: Aprova ou rejeita um reporte da fila, com justificativa (moderator e admin)
+      description: >-
+        `approve` mantém o órgão de um reporte já encaminhado (ex.: sinalização
+        improcedente) ou, com `category`/`subcategory`, reclassifica e encaminha
+        pela matriz de roteamento. `reject` marca `triage_state=rejected`: o
+        reporte sai do mapa público e do agrupamento de duplicados.
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+        - { name: decision, in: path, required: true, schema: { type: string, enum: [approve, reject] } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffModerationRequest" }
+      responses:
+        "200":
+          description: Decisão registrada na timeline (moderacao_aprovada / moderacao_rejeitada)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/analytics:
+    get:
+      tags: [staff]
+      summary: Analítica do painel no escopo do servidor
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date }, description: "Padrão: 29 dias antes de `to`" }
+        - { name: to, in: query, schema: { type: string, format: date }, description: "Padrão: hoje (UTC)" }
+        - { name: bucket, in: query, schema: { type: string, enum: [day, week], default: day } }
+      responses:
+        "200":
+          description: Totais, série temporal e agregações
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffAnalytics" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
   /v1/uploads/{token}:
     put:
       tags: [uploads]
@@ -761,6 +853,8 @@ components:
         - confirmacao_adicionada
         - cobrado
         - sinalizado
+        - moderacao_aprovada
+        - moderacao_rejeitada
 
     LoginRequest:
       type: object
@@ -838,7 +932,7 @@ components:
 
     TriageState:
       type: string
-      enum: [pending_classification, awaiting_user, confirmed, auto_confirmed, in_moderation]
+      enum: [pending_classification, awaiting_user, confirmed, auto_confirmed, in_moderation, rejected]
 
     Classification:
       type: object
@@ -944,6 +1038,79 @@ components:
         action: { type: string, enum: [in_progress, resolved, contest] }
         deadline: { type: string, format: date-time, description: "Obrigatório em in_progress" }
         justification: { type: string, maxLength: 1000, description: "Obrigatório em resolved e contest" }
+
+    StaffRedirectRequest:
+      type: object
+      required: [agency_id, justification]
+      properties:
+        agency_id: { type: string, maxLength: 64 }
+        justification: { type: string, minLength: 1, maxLength: 1000 }
+        deadline: { type: string, format: date-time, description: "Futuro e com fuso; padrão now + 72 h" }
+
+    StaffModerationRequest:
+      type: object
+      required: [justification]
+      properties:
+        justification: { type: string, minLength: 1, maxLength: 1000 }
+        category:
+          allOf: [{ $ref: "#/components/schemas/Category" }]
+          description: "Só em approve: reclassifica e encaminha"
+        subcategory: { type: string, maxLength: 64 }
+
+    StaffAnalytics:
+      type: object
+      required: [period, totals, timeseries, by_category, by_agency, by_region]
+      properties:
+        period:
+          type: object
+          properties:
+            from: { type: string, format: date }
+            to: { type: string, format: date }
+            bucket: { type: string, enum: [day, week] }
+        totals:
+          type: object
+          properties:
+            reports: { type: integer }
+            resolved: { type: integer }
+            open: { type: integer }
+            overdue: { type: integer }
+        timeseries:
+          type: array
+          items:
+            type: object
+            properties:
+              period: { type: string, format: date, description: "Dia ou segunda-feira da semana" }
+              opened: { type: integer }
+              resolved: { type: integer }
+        by_category:
+          type: array
+          items:
+            type: object
+            properties:
+              category: { $ref: "#/components/schemas/Category" }
+              reports: { type: integer }
+              resolved: { type: integer }
+        by_agency:
+          type: array
+          items:
+            type: object
+            properties:
+              agency: { $ref: "#/components/schemas/AgencyRef" }
+              reports: { type: integer }
+              resolved: { type: integer }
+              overdue: { type: integer }
+              avg_resolution_hours: { type: number, nullable: true }
+        by_region:
+          type: array
+          description: "Células de geohash (6 caracteres, ~1,2 km x 0,6 km); não há base de bairros"
+          items:
+            type: object
+            properties:
+              region: { type: string }
+              lat: { type: number }
+              lon: { type: number }
+              reports: { type: integer }
+              resolved: { type: integer }
 
     StaffProfile:
       type: object
