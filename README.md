@@ -260,8 +260,21 @@ docker compose up --build --wait  # Oracle, migrations, API, worker, web e Mailp
 | Painel web | http://localhost:4200 |
 | E-mails de teste (Mailpit) | http://localhost:8025 |
 
+IA local (opcional): `docker compose --profile ai up -d ollama` e
+`docker compose exec ollama ollama pull qwen2.5:3b`. Sem o modelo, a
+classificação cai para regras de palavra-chave (`AI_FALLBACK=fake`, só em
+desenvolvimento).
+
+Servidores do painel web entram por código no e-mail; cadastre-os com
+`./scripts/provision-staff.sh EMAIL PAPEL [ORGAO]` (papéis `agency`, `manager`,
+`moderator`, `admin`). O roteiro completo da demonstração (app → IA → órgão →
+painel → app) está em
+[`docs_tecnicas/07-runbook-operacao.md`](docs_tecnicas/07-runbook-operacao.md#roteiro-de-demonstração-ponta-a-ponta).
+
 Testes: `python -m unittest discover -s tests/infra` (infraestrutura) e, com o
 stack no ar, `python -m unittest discover -s tests/smoke` (ponta a ponta).
+Backend: `python -m unittest discover -s tests/unit` em `back-end/`; web:
+`npm test` em `web/`; mobile: `flutter test` em `mobile/`.
 Arquitetura dos containers, segurança e migrations:
 [`docs_tecnicas/09-containers-docker.md`](docs_tecnicas/09-containers-docker.md).
 
