@@ -1863,30 +1863,6 @@ class InMemoryReportRepository:
                 return protocol
 
 
-# Estado de triagem que o detalhe (get_detail) mostra: o último evento de
-# triagem do reporte. A coluna reports.triage_state não é atualizada pelo
-# PKG_ROTEAMENTO/PKG_JOBS e diverge dos eventos; fila e decisão da moderação
-# usam esta expressão para concordar com o que a web exibe.
-MODERATION_PENDING_SQL = """
-    (
-        SELECT t.type FROM report_events t
-        WHERE t.report_id = r.id
-          AND t.type IN (
-              'classificado',
-              'classificacao_confirmada',
-              'classificacao_corrigida',
-              'enviado_moderacao',
-              'vinculado_grupo',
-              'sinalizado',
-              'moderacao_aprovada',
-              'moderacao_rejeitada'
-          )
-        ORDER BY t.id DESC
-        FETCH FIRST 1 ROW ONLY
-    ) IN ('enviado_moderacao', 'sinalizado')
-"""
-
-
 class OracleReportRepository:
     def __init__(self, database: OracleDatabase) -> None:
         self._database = database
@@ -1973,12 +1949,9 @@ class OracleReportRepository:
                     actor=f"citizen:{user_id}",
                     justification=justification,
                 )
-                cursor.execute(
-                    """
-                    UPDATE reports SET triage_state = 'in_moderation'
-                    WHERE id = :report_id
-                    """,
-                    report_id=str(report_id),
+                cursor.callproc(
+                    "PKG_REPORTES.sincronizar_triagem",
+                    [str(report_id)],
                 )
                 cursor.execute(
                     """
@@ -2097,18 +2070,6 @@ class OracleReportRepository:
                 )
                 cursor.execute(
                     """
-                    UPDATE reports
-                    SET triage_state = CASE
-                            WHEN :event_type = 'resolvido' THEN 'confirmed'
-                            ELSE triage_state
-                        END
-                    WHERE id = :report_id
-                    """,
-                    event_type=event_type,
-                    report_id=str(report_id),
-                )
-                cursor.execute(
-                    """
                     INSERT INTO audit_log
                         (actor_user_id, action, resource_type, resource_id, justification)
                     VALUES (:actor_user_id, 'agency_status', 'report', :resource_id, :justification)
@@ -2206,17 +2167,13 @@ class OracleReportRepository:
             committed = False
             try:
                 cursor.execute(
-                    "SELECT 1 FROM reports WHERE id = :report_id FOR UPDATE",
+                    "SELECT triage_state FROM reports WHERE id = :report_id FOR UPDATE",
                     report_id=str(report_id),
                 )
-                if cursor.fetchone() is None:
+                row = cursor.fetchone()
+                if row is None:
                     raise ReportNotFound
-                cursor.execute(
-                    "SELECT COUNT(*) FROM reports r WHERE r.id = :report_id AND "
-                    + MODERATION_PENDING_SQL,
-                    report_id=str(report_id),
-                )
-                if cursor.fetchone()[0] == 0:
+                if row[0] != TriageState.IN_MODERATION.value:
                     raise TriageConflict
 
                 def add_event(event_type, event_actor, *, note=None, when=None, data=None):
@@ -2238,10 +2195,8 @@ class OracleReportRepository:
                     )
 
                 if decision == "reject":
-                    triage_state = TriageState.REJECTED.value
                     add_event("moderacao_rejeitada", actor, note=justification)
                 else:
-                    triage_state = TriageState.CONFIRMED.value
                     if classification is not None:
                         add_event(
                             "classificacao_corrigida",
@@ -2265,10 +2220,9 @@ class OracleReportRepository:
                                 ensure_ascii=False,
                             ),
                         )
-                cursor.execute(
-                    "UPDATE reports SET triage_state = :triage_state WHERE id = :report_id",
-                    triage_state=triage_state,
-                    report_id=str(report_id),
+                cursor.callproc(
+                    "PKG_REPORTES.sincronizar_triagem",
+                    [str(report_id)],
                 )
                 cursor.execute(
                     """
@@ -2606,9 +2560,7 @@ class OracleReportRepository:
                            ), 'recebido')
                     FROM reports r
                     JOIN report_groups g ON g.id = r.group_id
-                    WHERE """
-                    + MODERATION_PENDING_SQL
-                    + """
+                    WHERE r.triage_state = 'in_moderation'
                     ORDER BY r.received_at DESC
                     FETCH FIRST :limit ROWS ONLY
                     """,
@@ -3052,8 +3004,10 @@ class OracleReportRepository:
                 agency_id = None
                 agency_name = None
                 deadline = None
-                triage_state = TriageState.PENDING_CLASSIFICATION
-                for event_type, payload, event_deadline, actor in triage_events:
+                # Mantida pelos pacotes via pkg_reportes.sincronizar_triagem:
+                # mesma fonte usada pelo mapa, pela fila e pela moderação.
+                triage_state = TriageState(row[10])
+                for event_type, payload, event_deadline, _actor in triage_events:
                     event_data = self._decode_event_payload(payload)
                     if event_type in (
                         "classificado",
@@ -3063,24 +3017,10 @@ class OracleReportRepository:
                         classification = ClassificationResult.model_validate(
                             event_data
                         )
-                        if event_type == "classificado":
-                            triage_state = TriageState.AWAITING_USER
-                        elif actor == "system":
-                            triage_state = TriageState.AUTO_CONFIRMED
-                        else:
-                            triage_state = TriageState.CONFIRMED
                     elif event_type == "encaminhado":
                         agency_id = event_data.get("agency_id")
                         agency_name = event_data.get("agency_name")
                         deadline = event_deadline
-                    elif event_type in ("enviado_moderacao", "sinalizado"):
-                        triage_state = TriageState.IN_MODERATION
-                    elif event_type == "vinculado_grupo":
-                        triage_state = TriageState.AUTO_CONFIRMED
-                    elif event_type == "moderacao_aprovada":
-                        triage_state = TriageState.CONFIRMED
-                    elif event_type == "moderacao_rejeitada":
-                        triage_state = TriageState.REJECTED
 
                 canonical_id = row[13]
                 if agency_id is None and canonical_id != row[0]:

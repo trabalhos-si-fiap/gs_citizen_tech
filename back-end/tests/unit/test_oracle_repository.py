@@ -491,10 +491,29 @@ class OracleAreaQueryTests(unittest.TestCase):
 
 
 class OracleModerationQueueTests(unittest.TestCase):
+    """Fila, decisão e detalhe leem reports.triage_state, mantida pelo
+    PKG_REPORTES.sincronizar_triagem a partir dos eventos."""
+
+    @staticmethod
+    def _recording_cursor(database):
+        cursor = database.fake_connection.fake_cursor
+        queries, calls = [], []
+        original_execute = cursor.execute
+
+        def execute(query, **parameters):
+            queries.append(" ".join(query.split()))
+            original_execute(query, **parameters)
+
+        def callproc(name, parameters):
+            calls.append((name, parameters))
+
+        cursor.execute = execute
+        cursor.callproc = callproc
+        return cursor, queries, calls
+
     def test_list_moderation_only_returns_pending_reports(self) -> None:
-        # Um reporte sinalizado e já decidido (aprovado, rejeitado ou
-        # encaminhado) não pode voltar à fila: a moderação não tem ação
-        # possível sobre ele e o detalhe na web aparece sem botões.
+        # Sinalizado e já decidido não volta à fila: sem ação possível, o
+        # detalhe na web aparecia sem botões.
         database = FakeDatabase()
         cursor = database.fake_connection.fake_cursor
         cursor.fetchall = lambda: []
@@ -503,49 +522,63 @@ class OracleModerationQueueTests(unittest.TestCase):
         repository.list_moderation(limit=25)
 
         query = " ".join(cursor.executed_query.split())
-        # Mesmo critério do detalhe: o último evento de triagem decide.
-        self.assertIn("ORDER BY t.id DESC FETCH FIRST 1 ROW ONLY", query)
-        self.assertIn(") IN ('enviado_moderacao', 'sinalizado')", query)
-        self.assertIn("'moderacao_aprovada'", query)
-        self.assertIn("'moderacao_rejeitada'", query)
+        self.assertIn("WHERE r.triage_state = 'in_moderation'", query)
         self.assertNotIn("OR EXISTS", query)
-        self.assertNotIn("r.triage_state", query)
         self.assertEqual(cursor.query_parameters, {"limit": 25})
 
-    def test_resolve_moderation_checks_pending_state_from_events(self) -> None:
-        # A coluna reports.triage_state pode dizer in_moderation enquanto os
-        # eventos já seguiram (ou o contrário); a decisão segue os eventos.
+    def test_resolve_moderation_rejects_report_not_in_moderation(self) -> None:
         database = FakeDatabase()
-        cursor = database.fake_connection.fake_cursor
-        queries = []
-        original_execute = cursor.execute
-
-        def execute(query, **parameters):
-            queries.append(" ".join(query.split()))
-            original_execute(query, **parameters)
-
-        cursor.execute = execute
-        answers = iter([(1,), (0,)])
-        cursor.fetchone = lambda: next(answers)
+        cursor, _, calls = self._recording_cursor(database)
+        cursor.fetchone = lambda: ("confirmed",)
         repository = OracleReportRepository(database)
 
         from app.infrastructure.repositories import TriageConflict
 
         with self.assertRaises(TriageConflict):
             repository.resolve_moderation(
-                uuid4(),
-                "reject",
-                "Conteúdo ofensivo",
-                actor="moderator:1",
-                actor_user_id=1,
-                classification=None,
-                route=None,
-                deadline=None,
+                uuid4(), "reject", "Conteúdo ofensivo",
+                actor="moderator:1", actor_user_id=1,
+                classification=None, route=None, deadline=None,
             )
 
-        self.assertIn(") IN ('enviado_moderacao', 'sinalizado')", queries[1])
+        self.assertEqual(calls, [])
         self.assertFalse(database.fake_connection.committed)
-        self.assertTrue(database.fake_connection.rolled_back)
+
+    def test_resolve_moderation_syncs_triage_state_from_events(self) -> None:
+        database = FakeDatabase()
+        cursor, queries, calls = self._recording_cursor(database)
+        cursor.fetchone = lambda: ("in_moderation",)
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+
+        with patch.object(repository, "get_detail", return_value=None):
+            repository.resolve_moderation(
+                report_id, "reject", "Conteúdo ofensivo",
+                actor="moderator:1", actor_user_id=1,
+                classification=None, route=None, deadline=None,
+            )
+
+        self.assertEqual(
+            calls, [("PKG_REPORTES.sincronizar_triagem", [str(report_id)])]
+        )
+        self.assertFalse(any(q.startswith("UPDATE reports") for q in queries))
+        self.assertTrue(database.fake_connection.committed)
+
+    def test_flag_report_syncs_triage_state_from_events(self) -> None:
+        database = FakeDatabase()
+        cursor, queries, calls = self._recording_cursor(database)
+        answers = iter([(1,), None])
+        cursor.fetchone = lambda: next(answers)
+        repository = OracleReportRepository(database)
+        report_id = uuid4()
+
+        repository.flag_report(report_id, 7, "falso", None)
+
+        self.assertIn(
+            ("PKG_REPORTES.sincronizar_triagem", [str(report_id)]), calls
+        )
+        self.assertFalse(any(q.startswith("UPDATE reports") for q in queries))
+        self.assertTrue(database.fake_connection.committed)
 
 
 class OracleTriageSweepTests(unittest.TestCase):

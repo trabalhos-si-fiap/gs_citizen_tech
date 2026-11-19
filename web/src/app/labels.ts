@@ -72,3 +72,9 @@ export function deadlineLabel(deadline: string | null | undefined, now = Date.no
   if (hours > -48) return `atrasado ${-hours}h`;
   return `atrasado ${Math.round(-hours / 24)} dias`;
 }
+
+/** Valor de `<input type="datetime-local">` (hora local, sem fuso). */
+export function toDateTimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

@@ -13,6 +13,7 @@ import {
   deadlineLabel,
   formatDateTime,
   subcategoryLabel,
+  toDateTimeLocal,
 } from './labels';
 import { StaffApiError, StaffApiService } from './staff-api.service';
 import { AgencyRef, ReportCategory, ReportDetail, StatusChange } from './staff.models';
@@ -171,7 +172,8 @@ export class OccurrenceDetailComponent implements OnInit {
     value,
     label: CATEGORY_LABELS[value],
   }));
-  readonly minDeadline = new Date(Date.now() + 3_600_000).toISOString().slice(0, 16);
+  /** Mínimo de 1h à frente, em hora local (toISOString daria UTC: +3h no Brasil). */
+  readonly minDeadline = toDateTimeLocal(new Date(Date.now() + 3_600_000));
 
   readonly report = signal<ReportDetail | null>(null);
   readonly loadError = signal('');

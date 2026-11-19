@@ -40,6 +40,15 @@ CREATE OR REPLACE PACKAGE pkg_reportes AS
     );
 
     FUNCTION gerar_protocolo RETURN VARCHAR2;
+
+    -- Estado de triagem derivado dos eventos (fonte de verdade). Em moderação
+    -- enquanto houver sinalização/envio à moderação sem decisão posterior;
+    -- fora disso, vale o último evento de triagem.
+    FUNCTION estado_triagem(p_report_id IN reports.id%TYPE) RETURN VARCHAR2;
+
+    -- Grava estado_triagem em reports.triage_state (lida por mapa, fila,
+    -- moderação e detalhe). Chame após inserir qualquer evento de triagem.
+    PROCEDURE sincronizar_triagem(p_report_id IN reports.id%TYPE);
 END pkg_reportes;
 /
 
@@ -368,6 +377,64 @@ CREATE OR REPLACE PACKAGE BODY pkg_reportes AS
 
         INSERT INTO report_events (report_id, type, actor, payload)
         VALUES (p_report_id, 'classificado', 'system', p_payload);
+        sincronizar_triagem(p_report_id);
     END registrar_classificacao;
+
+    FUNCTION estado_triagem(p_report_id IN reports.id%TYPE) RETURN VARCHAR2 IS
+        v_last_flag report_events.id%TYPE;
+        v_last_decision report_events.id%TYPE;
+        v_type report_events.type%TYPE;
+        v_actor report_events.actor%TYPE;
+    BEGIN
+        SELECT MAX(CASE WHEN type IN ('sinalizado', 'enviado_moderacao') THEN id END),
+               MAX(CASE WHEN type IN ('moderacao_aprovada', 'moderacao_rejeitada') THEN id END)
+        INTO v_last_flag, v_last_decision
+        FROM report_events
+        WHERE report_id = p_report_id;
+        IF v_last_flag > NVL(v_last_decision, 0) THEN
+            RETURN 'in_moderation';
+        END IF;
+
+        BEGIN
+            SELECT type, actor
+            INTO v_type, v_actor
+            FROM report_events
+            WHERE report_id = p_report_id
+              AND type IN (
+                  'classificado',
+                  'classificacao_confirmada',
+                  'classificacao_corrigida',
+                  'vinculado_grupo',
+                  'moderacao_aprovada',
+                  'moderacao_rejeitada'
+              )
+            ORDER BY id DESC
+            FETCH FIRST 1 ROW ONLY;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RETURN 'pending_classification';
+        END;
+
+        RETURN CASE
+            WHEN v_type = 'classificado' THEN 'awaiting_user'
+            WHEN v_type IN ('classificacao_confirmada', 'classificacao_corrigida')
+                 AND v_actor = 'system' THEN 'auto_confirmed'
+            WHEN v_type IN ('classificacao_confirmada', 'classificacao_corrigida')
+                 THEN 'confirmed'
+            WHEN v_type = 'vinculado_grupo' THEN 'auto_confirmed'
+            WHEN v_type = 'moderacao_aprovada' THEN 'confirmed'
+            ELSE 'rejected'
+        END;
+    END estado_triagem;
+
+    PROCEDURE sincronizar_triagem(p_report_id IN reports.id%TYPE) IS
+        v_state reports.triage_state%TYPE;
+    BEGIN
+        v_state := estado_triagem(p_report_id);
+        UPDATE reports
+        SET triage_state = v_state
+        WHERE id = p_report_id
+          AND triage_state <> v_state;
+    END sincronizar_triagem;
 END pkg_reportes;
 /

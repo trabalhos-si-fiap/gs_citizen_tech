@@ -78,8 +78,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_dedup AS
         DELETE FROM confirmations WHERE target_id = v_old_group;
 
         UPDATE reports
-        SET group_id = p_group_id,
-            triage_state = 'auto_confirmed'
+        SET group_id = p_group_id
         WHERE id = p_report_id;
 
         UPDATE report_groups
@@ -103,6 +102,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_dedup AS
 
         INSERT INTO report_events (report_id, type, actor, payload)
         VALUES (p_report_id, 'vinculado_grupo', 'system', v_payload);
+        pkg_reportes.sincronizar_triagem(p_report_id);
     END vincular;
 END pkg_dedup;
 /
