@@ -421,6 +421,23 @@ class OracleRepositoryTests(unittest.TestCase):
         self.assertTrue(database.fake_connection.committed)
 
 
+class OracleNotificationTokenTests(unittest.TestCase):
+    def test_tokens_come_from_registered_devices(self) -> None:
+        # notification_links também tem push_token; sem qualificar, o Oracle
+        # recusa a consulta (ORA-00918) e nenhum aviso de status sai.
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [("device-token",)]
+
+        tokens = OracleReportRepository(database).list_notification_tokens(
+            UUID("8d11c206-f849-4631-9c0f-d27a23fc7634")
+        )
+
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("SELECT DISTINCT device.push_token", query)
+        self.assertEqual(tokens, ["device-token"])
+
+
 class OracleAreaQueryTests(unittest.TestCase):
     def test_list_in_area_filters_box_and_hides_moderation(self) -> None:
         report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"

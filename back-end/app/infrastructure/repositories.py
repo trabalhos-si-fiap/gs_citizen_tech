@@ -3016,7 +3016,7 @@ class OracleReportRepository:
             try:
                 cursor.execute(
                     """
-                    SELECT push_token
+                    SELECT DISTINCT device.push_token
                     FROM notification_devices device
                     JOIN notification_links link
                       ON link.user_id = device.user_id
