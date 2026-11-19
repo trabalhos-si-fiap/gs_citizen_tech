@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +23,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   late Report _report;
   bool _isMapVisible = false;
+
+  ImageProvider? _resolveImageProvider(String? pathOrUrl) {
+    if (pathOrUrl == null || pathOrUrl.isEmpty) return null;
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return NetworkImage(pathOrUrl);
+    }
+    return FileImage(File(pathOrUrl));
+  }
   final _commentController = TextEditingController();
   StreamSubscription<List<Report>>? _storeSubscription;
   Timer? _refreshTimer;
@@ -286,9 +295,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 color: ReclameJaColors.surfaceLow,
-                image: _report.imageUrl != null
+                image: _resolveImageProvider(_report.imageUrl) != null
                     ? DecorationImage(
-                        image: NetworkImage(_report.imageUrl!),
+                        image: _resolveImageProvider(_report.imageUrl)!,
                         fit: BoxFit.cover,
                       )
                     : null,
@@ -378,29 +387,37 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.65),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.construction,
-                                  color: ReclameJaColors.primaryYellow,
-                                  size: 14),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_report.category} • ${_report.subcategory}',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600),
-                              ),
-                            ],
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.construction,
+                                    color: ReclameJaColors.primaryYellow,
+                                    size: 14),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    '${_report.category} • ${_report.subcategory}',
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           _report.imageUrl != null ? '1 foto' : 'Sem foto',
                           style: const TextStyle(
@@ -501,31 +518,37 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Protocolo Oficial',
-                          style: textTheme.labelSmall
-                              ?.copyWith(color: ReclameJaColors.textMuted)),
-                      const SizedBox(height: 2),
-                      Text(
-                        _report.id,
-                        style: textTheme.headlineMedium?.copyWith(
-                          fontSize: 18,
-                          color: ReclameJaColors.secondaryEmerald,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Protocolo Oficial',
+                            style: textTheme.labelSmall
+                                ?.copyWith(color: ReclameJaColors.textMuted)),
+                        const SizedBox(height: 2),
+                        Text(
+                          _report.id,
+                          style: textTheme.headlineMedium?.copyWith(
+                            fontSize: 15,
+                            color: ReclameJaColors.secondaryEmerald,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       backgroundColor: ReclameJaColors.surfaceBright,
                       foregroundColor: ReclameJaColors.secondaryEmerald,
                       side:
                           const BorderSide(color: ReclameJaColors.borderSlate),
-                      minimumSize: const Size(100, 40),
+                      minimumSize: const Size(90, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
                     ),
@@ -708,15 +731,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                                     MainAxisAlignment
                                                         .spaceBetween,
                                                 children: [
-                                                  Text(
-                                                    '${index + 1}. ${event.title}',
-                                                    style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 13,
-                                                        color:
-                                                            Color(0xFF451A03)),
+                                                  Expanded(
+                                                    child: Text(
+                                                      '${index + 1}. ${event.title}',
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 13,
+                                                          color:
+                                                              Color(0xFF451A03)),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
                                                   ),
+                                                  const SizedBox(width: 8),
                                                   Text(event.time,
                                                       style: const TextStyle(
                                                           fontSize: 10,
@@ -756,12 +784,16 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                           children: [
                                             Row(
                                               children: [
-                                                Text(
-                                                    '${index + 1}. ${event.title}',
-                                                    style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 13)),
+                                                Expanded(
+                                                  child: Text(
+                                                      '${index + 1}. ${event.title}',
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 13),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis),
+                                                ),
                                                 const SizedBox(width: 8),
                                                 Text(event.time,
                                                     style: textTheme.bodySmall
@@ -1192,12 +1224,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                 const SizedBox(height: 16),
 
                 // Support links
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
                   children: [
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                          foregroundColor: ReclameJaColors.textMuted),
+                        foregroundColor: ReclameJaColors.textMuted,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -1206,17 +1244,21 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         );
                       },
                       icon:
-                          const Icon(Icons.contact_support_outlined, size: 16),
+                          const Icon(Icons.contact_support_outlined, size: 14),
                       label: const Text('Falar com Ouvidoria',
                           style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               decoration: TextDecoration.underline)),
                     ),
                     const Text('•',
                         style: TextStyle(color: ReclameJaColors.surfaceDim)),
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                          foregroundColor: ReclameJaColors.alertRed),
+                        foregroundColor: ReclameJaColors.alertRed,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -1224,10 +1266,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                   'Abuso reportado para auditoria da equipe do Voz Cidadã.')),
                         );
                       },
-                      icon: const Icon(Icons.flag_outlined, size: 16),
+                      icon: const Icon(Icons.flag_outlined, size: 14),
                       label: const Text('Relatar inconsistência',
                           style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               decoration: TextDecoration.underline)),
                     ),
                   ],

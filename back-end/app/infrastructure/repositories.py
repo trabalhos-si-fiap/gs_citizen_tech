@@ -2793,7 +2793,7 @@ class OracleReportRepository:
                            AVG(resolved_hours), AVG(resolved_flag)
                     FROM (
                         SELECT r.id,
-                               rr.agency_id,
+                               a.agency_id,
                                a.name agency_name,
                                CASE WHEN resolved.type = 'resolvido'
                                     THEN (resolved.created_at - r.received_at) * 24

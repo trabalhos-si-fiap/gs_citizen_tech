@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
@@ -18,6 +20,14 @@ class PostSendConfirmationScreen extends StatefulWidget {
 class _PostSendConfirmationScreenState
     extends State<PostSendConfirmationScreen> {
   bool _isConfirmedByMunicipe = false;
+
+  ImageProvider? _resolveImageProvider(String? pathOrUrl) {
+    if (pathOrUrl == null || pathOrUrl.isEmpty) return null;
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return NetworkImage(pathOrUrl);
+    }
+    return FileImage(File(pathOrUrl));
+  }
 
   Future<void> _confirmData() async {
     final apiId = widget.report.apiId;
@@ -186,11 +196,15 @@ class _PostSendConfirmationScreenState
                         const Icon(Icons.tag,
                             size: 14, color: Color(0xFF14532D)),
                         const SizedBox(width: 4),
-                        Text(
-                          'Protocolo ${widget.report.id}',
-                          style: textTheme.labelSmall?.copyWith(
-                            color: const Color(0xFF14532D),
-                            fontWeight: FontWeight.bold,
+                        Flexible(
+                          child: Text(
+                            'Protocolo ${widget.report.id}',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: const Color(0xFF14532D),
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -239,9 +253,9 @@ class _PostSendConfirmationScreenState
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       color: ReclameJaColors.surfaceLow,
-                      image: widget.report.imageUrl != null
+                      image: _resolveImageProvider(widget.report.imageUrl) != null
                           ? DecorationImage(
-                              image: NetworkImage(widget.report.imageUrl!),
+                              image: _resolveImageProvider(widget.report.imageUrl)!,
                               fit: BoxFit.cover,
                             )
                           : null,
@@ -284,24 +298,33 @@ class _PostSendConfirmationScreenState
                         Positioned(
                           bottom: 10,
                           left: 10,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.7),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.location_on,
-                                    color: Colors.white, size: 14),
-                                const SizedBox(width: 4),
-                                Text(
-                                  widget.report.location,
-                                  style: const TextStyle(
-                                      color: Colors.white, fontSize: 11),
-                                ),
-                              ],
+                          right: 10,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.location_on,
+                                      color: Colors.white, size: 14),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      widget.report.location,
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

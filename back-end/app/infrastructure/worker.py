@@ -149,6 +149,9 @@ class ReportJobWorker:
                 photo_key = self._photo_storage.process_upload(job.report_id)
                 self._repository.set_photo_key(job.report_id, photo_key)
                 self._photo_storage.discard_upload(job.report_id)
+                # Reporte com foto só é classificado depois da foto; a
+                # classificação usa o texto e a fila ignora job repetido.
+                self._queue.enqueue(job.report_id, "classificar")
             elif (
                 job.stage == "notify_agency"
                 # notify_agency_<evento>: aviso ao novo órgão após redirecionamento.

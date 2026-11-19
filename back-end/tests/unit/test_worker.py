@@ -192,6 +192,28 @@ class WorkerTests(unittest.TestCase):
         )
         photo_storage.discard_upload.assert_called_once_with(report_id)
 
+    def test_photo_processing_enqueues_classification(self) -> None:
+        # Reporte com foto não nasce com job de classificação; sem este
+        # encadeamento ele nunca sairia de "recebido" para o painel web.
+        report_id = uuid4()
+        self.queue.enqueue(report_id, "process_photo")
+        photo_storage = Mock()
+        photo_storage.process_upload.return_value = "objects/photo.jpg"
+        worker = ReportJobWorker(
+            self.queue,
+            Mock(),
+            ClassificationService(FakeClassifier()),
+            worker_id="test-worker",
+            photo_storage=photo_storage,
+        )
+
+        self.assertTrue(worker.run_once())
+
+        next_job = self.queue.reserve_next("test-worker", lease_seconds=30)
+        self.assertIsNotNone(next_job)
+        self.assertEqual(next_job.report_id, report_id)
+        self.assertEqual(next_job.stage, "classificar")
+
     def test_worker_sends_agency_notification_job(self) -> None:
         report_id = uuid4()
         self.queue.enqueue(report_id, "notify_agency")

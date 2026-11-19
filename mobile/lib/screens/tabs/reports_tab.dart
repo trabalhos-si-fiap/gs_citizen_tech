@@ -359,37 +359,44 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        r.id,
-                        style: textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: isOffline
-                              ? ReclameJaColors.textMuted
-                              : ReclameJaColors.secondaryEmerald,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Overdue "Atrasado" Badge
-                      if (isOverdue)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: ReclameJaColors.errorContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
                           child: Text(
-                            'ATRASADO',
-                            style: textTheme.labelSmall?.copyWith(
-                                fontSize: 8,
-                                color: ReclameJaColors.onErrorContainer,
-                                fontWeight: FontWeight.bold),
+                            r.id,
+                            style: textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: isOffline
+                                  ? ReclameJaColors.textMuted
+                                  : ReclameJaColors.secondaryEmerald,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                    ],
+                        if (isOverdue) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: ReclameJaColors.errorContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'ATRASADO',
+                              style: textTheme.labelSmall?.copyWith(
+                                  fontSize: 8,
+                                  color: ReclameJaColors.onErrorContainer,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
