@@ -149,6 +149,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_jobs AS
                     RETURNING CLOB
                 )
             );
+            pkg_reportes.sincronizar_triagem(p_report_id);
         END IF;
     END enviar_moderacao;
 

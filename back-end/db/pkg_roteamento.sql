@@ -149,6 +149,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
                     'system',
                     p_classification
                 );
+                pkg_reportes.sincronizar_triagem(p_report_id);
                 RETURN;
         END;
 
@@ -174,6 +175,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_roteamento AS
             v_deadline,
             v_payload
         ) RETURNING id INTO v_status_event_id;
+        pkg_reportes.sincronizar_triagem(p_report_id);
 
         pkg_jobs.enfileirar(p_report_id, 'notify_agency');
         pkg_jobs.enfileirar(
