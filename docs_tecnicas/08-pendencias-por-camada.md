@@ -1,6 +1,6 @@
 # Pendências do projeto por camada
 
-**Atualizado em:** 18/11/2026  
+**Atualizado em:** 19/11/2026 (fases A a E do [`10-plano-fechamento.md`](./10-plano-fechamento.md))  
 **Escopo:** backend, banco de dados, Flutter mobile e painel web.
 
 Este inventário complementa o
@@ -13,18 +13,20 @@ as telas mobile e os componentes Angular.
 
 | Camada | Estado | Pendência principal |
 |---|---|---|
-| Backend | Parcialmente implementado | Agrupamento de duplicados e triagem automática; integrar provedores e validar fluxos ponta a ponta |
+| Backend | Fluxo da entrega completo | Mensagem oficial ao cidadão (B5); provedores externos (push, visão) |
 | Banco de dados | **Concluído** | Nenhuma pendência de modelagem/DDL; apenas eventual homologação no Oracle-alvo |
-| Flutter mobile | Integração em andamento | Firebase/OAuth nativos, assinatura de release e servidor de tiles para produção |
-| Web Angular | Protótipos, com indicadores públicos integrados | Autenticação institucional e consumo real das APIs de gestão |
+| Flutter mobile | Integrado (OTP, reporte, mapa, feed, acompanhamento com polling) | Firebase/OAuth nativos, assinatura de release, servidor de tiles e passe ponta a ponta no aparelho |
+| Web Angular | Integrado à API (login OTP, ocorrências, detalhe, ações, moderação, dashboard) | Testes e2e, acessibilidade e mensagem ao cidadão |
 | Operação | Parcial | Stack local containerizado e testado; faltam CD, ambientes de homologação/produção, observabilidade e backup/restore |
 
 ### Dependências que bloqueiam mais de uma camada
 
 1. ~~A rota pública de ocorrências próximas bloqueia o mapa e o feed comunitário
    mobile.~~ Resolvido: rota e telas entregues e validadas em aparelho.
-2. A decisão e implementação de autenticação institucional bloqueia os painéis
-   web do órgão e de moderação.
+2. ~~A decisão e implementação de autenticação institucional bloqueia os
+   painéis web do órgão e de moderação.~~ Resolvido para a entrega: login
+   institucional por OTP com papel e órgão no banco (PR #9). Senha + TOTP fica
+   como trabalho futuro (seção 7).
 3. Credenciais e configuração nativa Firebase bloqueiam push real no Flutter.
 4. Provedor visual aprovado e decisão jurídica bloqueiam análise de imagem,
    classificação visual e desfoque real de rostos/placas.
@@ -179,26 +181,23 @@ o estado de conclusão do modelo lógico nem do DDL.
 
 ### Pendências funcionais
 
-- [ ] Adaptar o web à autenticação institucional: trocar `/login` pelo fluxo
-  OTP (`/v1/auth/login` + `/v1/auth/refresh`), guardar tokens, aplicar guarda de
-  rota por papel (`GET /v1/staff/me`). Não colocar `AGENCY_API_KEYS` no navegador.
-- [ ] Substituir dados demonstrativos do dashboard por indicadores da API e
-  implementar período, filtros, alertas, gráficos e exportação efetiva.
-- [ ] Substituir a lista ilustrativa de ocorrências por consulta paginada à API;
-  ligar busca, categoria, status, prioridade e prazo a filtros de servidor.
-- [ ] Carregar o detalhe por identificador real e preencher linha do tempo,
-  localização, categoria, prazo e anexos com a resposta da API.
-- [ ] Persistir as ações da tela de detalhe: atualização de status com
-  justificativa, redirecionamento, envio de atualização ao cidadão e consulta
-  de órgãos. A UI atual altera estado local ou mostra mensagens demonstrativas.
-- [ ] Integrar fila de moderação às rotas existentes, com autorização,
-  justificativas, trilha de auditoria e tratamento de erros.
-- [ ] Adicionar testes unitários, de contrato/API e e2e; validar acessibilidade,
-  layout responsivo e comportamento de falha/sem dados.
-
-O README do web identifica explicitamente as telas administrativas como
-ilustrativas; elas não devem ser usadas para operação municipal até essas
-integrações serem concluídas.
+- [x] Login institucional por OTP (`/v1/auth/login` + refresh), guarda de rota
+  e perfil por `GET /v1/staff/me`. `AGENCY_API_KEYS` não vai ao navegador.
+- [x] Dashboard com `GET /v1/staff/analytics`: período (7 dias, 30 dias, 12
+  semanas), série abertos × concluídos, categorias, órgãos, regiões, prazos
+  vencidos e exportação CSV.
+- [x] Lista de ocorrências paginada pela API com busca, status, categoria e
+  atraso.
+- [x] Detalhe por identificador real: classificação, foto, mapa OSM, linha do
+  tempo, órgão e prazo.
+- [x] Ações persistidas: status com prazo/justificativa, redirecionamento a
+  outro órgão e moderação (aprovar com reclassificação ou rejeitar).
+- [x] Fila de moderação (`/moderacao`).
+- [ ] Mensagem oficial ao cidadão a partir do detalhe (depende do B5).
+- [ ] Testes e2e e de acessibilidade; hoje há testes unitários do serviço de
+  API e do login.
+- [ ] Filtro por prioridade/urgência e por região na lista (a API não filtra
+  por esses campos).
 
 ## 5. Entrega e operação
 
@@ -259,8 +258,8 @@ ainda não iniciado.
 - [ ] **Servidor de tiles do mapa:** os tiles públicos do OpenStreetMap não
   podem ser usados em produção (política de uso). Contratar ou hospedar um
   servidor e trocar `osmTileUrl` em `mobile/lib/screens/tabs/map_tab.dart`.
-- [ ] **Resquício do Salesforce CLI:** `.sf/orgs/.../catalog.json` está
-  versionado sem relação com o projeto; confirmar e remover do git.
+- [x] **Resquício do Salesforce CLI:** `.sf/` saiu do git e entrou no
+  `.gitignore`.
 
 ### Backend e banco
 
@@ -276,8 +275,13 @@ ainda não iniciado.
 - [ ] **Fuso horário em `received_at`:** o Oracle devolve as datas sem fuso
   (ex.: `2026-11-18T17:38:20`) em todas as rotas de leitura; normalizar para
   UTC com offset na camada de repositório.
-- [ ] **`subcategory` no mapa:** `/v1/reports/nearby` devolve sempre `null`;
-  preencher a partir da classificação vigente.
+- [x] **`subcategory` no mapa:** preenchida a partir do último evento de
+  classificação (PR #10).
+- [x] **Notificação de status nunca saía no Oracle:** `push_token` ambíguo
+  entre `notification_links` e `notification_devices` (ORA-00918); corrigido
+  (PR #10).
+- [x] **Migração do staff colidia com a V006 e com o schema base:** renumerada
+  para V008 e removida de `schema.sql` (PR #9).
 - [ ] **Teto de candidatos da proximidade:** no máximo 1000 reportes por
   consulta (os mais recentes do retângulo). Revisar se o volume do piloto
   passar disso.
@@ -302,8 +306,48 @@ ainda não iniciado.
   usuário sem privilégios antes de ativar fora do ambiente local.
 - [ ] **URL da API no painel web:** o build do Angular usa a URL local; falta
   injetar a URL por ambiente (homologação e produção).
+- [x] **Ollama no compose:** o classificador recusava o host `ollama` da rede
+  interna; agora aceita nomes de serviço e IPs privados, com fallback por
+  palavra-chave em desenvolvimento (`AI_FALLBACK=fake`).
 - [ ] **CD:** ainda não há publicação de imagens nem implantação automatizada
   (ver seção 5).
+
+### Registradas no fechamento (19/11/2026)
+
+- [ ] **B5 — mensagem oficial ao cidadão:** rota, evento na timeline e push;
+  o card foi retirado do detalhe web até existir.
+- [ ] **Passe ponta a ponta no aparelho (D1):** o fluxo app → painel → app foi
+  validado pela API e pelo navegador; falta repetir com o S20 conectado.
+- [ ] **Analítica:** agregação em memória a partir de uma linha por reporte do
+  período (adequado ao volume da demonstração); a série de concluídos conta só
+  reportes abertos no período; "região" é célula de geohash (~1,2 km) porque
+  não há base de bairros.
+- [ ] **Redirecionamento:** prazo padrão de 72 h para o novo órgão; avaliar
+  usar o `deadline_hours` da regra do órgão de destino.
+- [ ] **Moderação:** o cidadão não recebe push quando o reporte é rejeitado
+  (só vê na linha do tempo).
+- [ ] **Login institucional por OTP:** contas criadas por
+  `scripts/provision-staff.sh`; não há tela de gestão de usuários.
+
+## 7. Fora do escopo da entrega (trabalho futuro)
+
+Conforme o plano de fechamento, ficam documentados e não serão feitos agora:
+
+- **Autenticação institucional forte:** senha + TOTP, convite, sessão no
+  servidor, gestão de usuários com hierarquia (`V008`/`pkg_staff` do desenho
+  original), bootstrap do admin, limitador por IP persistente, WebAuthn, SMTP
+  real, rotação da chave TOTP, proxy `/api` no nginx. Desenho em
+  `docs/superpowers/specs/2026-11-18-autenticacao-institucional-design.md`
+  (branch `feat/staff-auth`, local).
+- **Decisões pendentes:** imagem do Oracle, exposição do detalhe do reporte,
+  tiles OSM de produção, limites de duplicado (50 m, 14 dias, 80%).
+- **Infra e entrega:** CD, build Android no CI, chave de release,
+  Firebase/push, Ollama sem root, cache do NDK no Flutter em Docker.
+- **Backend:** fuso de `received_at`, teto de 1000 candidatos no nearby,
+  usuário fixo no grant, executor de migrações que registra versão inválida.
+- **Funcionalidades:** comparação de fotos para duplicados, push ao grupo,
+  login Google, desfoque de rostos e placas.
+- **Web:** testes e2e, acessibilidade, indicadores avançados.
 
 ## Critério de encerramento
 

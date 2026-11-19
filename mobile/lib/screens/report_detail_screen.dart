@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,9 +17,14 @@ class ReportDetailScreen extends StatefulWidget {
 }
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
+  /// Intervalo do polling: o órgão muda status e prazo pelo painel web.
+  static const refreshInterval = Duration(seconds: 20);
+
   late Report _report;
   bool _isMapVisible = false;
   final _commentController = TextEditingController();
+  StreamSubscription<List<Report>>? _storeSubscription;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -25,11 +32,15 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     _report = widget.report;
     _listenToStore();
     _refreshFromApi();
+    _refreshTimer = Timer.periodic(
+      refreshInterval,
+      (_) => _refreshFromApi(silent: true),
+    );
   }
 
   void _listenToStore() {
     // Keep internal screen state updated if the store changes (e.g. comments or confirmations)
-    ReportStore().reportsStream.listen((list) {
+    _storeSubscription = ReportStore().reportsStream.listen((list) {
       if (mounted) {
         final updated =
             list.firstWhere((r) => r.id == _report.id, orElse: () => _report);
@@ -42,6 +53,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    _storeSubscription?.cancel();
     _commentController.dispose();
     super.dispose();
   }
@@ -63,7 +76,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
-  Future<void> _refreshFromApi() async {
+  Future<void> _refreshFromApi({bool silent = false}) async {
     final apiId = _report.apiId;
     if (apiId == null || _report.isOffline) return;
     try {
@@ -83,7 +96,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           .toList();
       ReportStore().updateComments(apiId, items);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || silent) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text('Não foi possível atualizar o reporte agora.')),
@@ -552,7 +565,10 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Previsão Oficial • Reclame Já',
+                          _report.organ.isEmpty
+                              ? 'Previsão Oficial • Reclame Já'
+                              : 'Responsável: ${_report.organ}',
+                          key: const ValueKey('report-detail-organ'),
                           style: textTheme.labelSmall?.copyWith(
                             color: const Color(0xFF14532D),
                             fontWeight: FontWeight.bold,
@@ -560,7 +576,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _report.forecast,
+                          _report.forecast.isEmpty
+                              ? 'Prazo definido quando o órgão receber'
+                              : _report.forecast,
                           style: textTheme.bodyMedium?.copyWith(
                             color: const Color(0xFF14532D),
                             fontWeight: FontWeight.bold,
