@@ -490,6 +490,63 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual(item.subcategory, "buraco_via")
 
 
+class OracleModerationQueueTests(unittest.TestCase):
+    def test_list_moderation_only_returns_pending_reports(self) -> None:
+        # Um reporte sinalizado e já decidido (aprovado, rejeitado ou
+        # encaminhado) não pode voltar à fila: a moderação não tem ação
+        # possível sobre ele e o detalhe na web aparece sem botões.
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: []
+        repository = OracleReportRepository(database)
+
+        repository.list_moderation(limit=25)
+
+        query = " ".join(cursor.executed_query.split())
+        # Mesmo critério do detalhe: o último evento de triagem decide.
+        self.assertIn("ORDER BY t.id DESC FETCH FIRST 1 ROW ONLY", query)
+        self.assertIn(") IN ('enviado_moderacao', 'sinalizado')", query)
+        self.assertIn("'moderacao_aprovada'", query)
+        self.assertIn("'moderacao_rejeitada'", query)
+        self.assertNotIn("OR EXISTS", query)
+        self.assertNotIn("r.triage_state", query)
+        self.assertEqual(cursor.query_parameters, {"limit": 25})
+
+    def test_resolve_moderation_checks_pending_state_from_events(self) -> None:
+        # A coluna reports.triage_state pode dizer in_moderation enquanto os
+        # eventos já seguiram (ou o contrário); a decisão segue os eventos.
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        queries = []
+        original_execute = cursor.execute
+
+        def execute(query, **parameters):
+            queries.append(" ".join(query.split()))
+            original_execute(query, **parameters)
+
+        cursor.execute = execute
+        answers = iter([(1,), (0,)])
+        cursor.fetchone = lambda: next(answers)
+        repository = OracleReportRepository(database)
+
+        from app.infrastructure.repositories import TriageConflict
+
+        with self.assertRaises(TriageConflict):
+            repository.resolve_moderation(
+                uuid4(),
+                "reject",
+                "Conteúdo ofensivo",
+                actor="moderator:1",
+                actor_user_id=1,
+                classification=None,
+                route=None,
+                deadline=None,
+            )
+
+        self.assertIn(") IN ('enviado_moderacao', 'sinalizado')", queries[1])
+        self.assertFalse(database.fake_connection.committed)
+        self.assertTrue(database.fake_connection.rolled_back)
+
 
 class OracleTriageSweepTests(unittest.TestCase):
     def test_list_triage_due_selects_classified_reports_without_triage(self) -> None:

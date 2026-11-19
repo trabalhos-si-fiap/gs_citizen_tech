@@ -1863,6 +1863,30 @@ class InMemoryReportRepository:
                 return protocol
 
 
+# Estado de triagem que o detalhe (get_detail) mostra: o último evento de
+# triagem do reporte. A coluna reports.triage_state não é atualizada pelo
+# PKG_ROTEAMENTO/PKG_JOBS e diverge dos eventos; fila e decisão da moderação
+# usam esta expressão para concordar com o que a web exibe.
+MODERATION_PENDING_SQL = """
+    (
+        SELECT t.type FROM report_events t
+        WHERE t.report_id = r.id
+          AND t.type IN (
+              'classificado',
+              'classificacao_confirmada',
+              'classificacao_corrigida',
+              'enviado_moderacao',
+              'vinculado_grupo',
+              'sinalizado',
+              'moderacao_aprovada',
+              'moderacao_rejeitada'
+          )
+        ORDER BY t.id DESC
+        FETCH FIRST 1 ROW ONLY
+    ) IN ('enviado_moderacao', 'sinalizado')
+"""
+
+
 class OracleReportRepository:
     def __init__(self, database: OracleDatabase) -> None:
         self._database = database
@@ -2182,13 +2206,17 @@ class OracleReportRepository:
             committed = False
             try:
                 cursor.execute(
-                    "SELECT triage_state FROM reports WHERE id = :report_id FOR UPDATE",
+                    "SELECT 1 FROM reports WHERE id = :report_id FOR UPDATE",
                     report_id=str(report_id),
                 )
-                row = cursor.fetchone()
-                if row is None:
+                if cursor.fetchone() is None:
                     raise ReportNotFound
-                if row[0] != TriageState.IN_MODERATION.value:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM reports r WHERE r.id = :report_id AND "
+                    + MODERATION_PENDING_SQL,
+                    report_id=str(report_id),
+                )
+                if cursor.fetchone()[0] == 0:
                     raise TriageConflict
 
                 def add_event(event_type, event_actor, *, note=None, when=None, data=None):
@@ -2578,12 +2606,9 @@ class OracleReportRepository:
                            ), 'recebido')
                     FROM reports r
                     JOIN report_groups g ON g.id = r.group_id
-                    WHERE r.triage_state = 'in_moderation'
-                       OR EXISTS (
-                           SELECT 1 FROM report_events e
-                           WHERE e.report_id = r.id
-                             AND e.type IN ('sinalizado','enviado_moderacao')
-                       )
+                    WHERE """
+                    + MODERATION_PENDING_SQL
+                    + """
                     ORDER BY r.received_at DESC
                     FETCH FIRST :limit ROWS ONLY
                     """,
