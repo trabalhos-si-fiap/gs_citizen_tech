@@ -34,6 +34,7 @@ from app.models.staff import (
     StaffAgenciesResponse,
     StaffContext,
     StaffProfileResponse,
+    StaffRedirectRequest,
     StaffReportItemResponse,
     StaffReportPageResponse,
     StaffSummaryResponse,
@@ -301,4 +302,62 @@ def update_status(
         worker: ReportJobWorker = request.app.state.report_worker
         worker.enqueue(report_id, f"notify_status_{event_id}")
         background_tasks.add_task(worker.run_once)
+    return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+@router.post(
+    "/reports/{report_id}/redirect",
+    response_model=ReportDetailResponse,
+    responses={
+        403: {"description": "Perfil sem permissão para redirecionar."},
+        404: {"description": "Reporte não encontrado no seu escopo."},
+        409: {"description": "Estado não permite redirecionar ou órgão é o atual."},
+        422: {"description": "Órgão, prazo ou justificativa inválidos."},
+    },
+)
+def redirect_report(
+    report_id: UUID,
+    payload: StaffRedirectRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffService = Depends(get_staff_service),
+    photos: PhotoService = Depends(get_photo_service),
+) -> ReportDetailResponse:
+    try:
+        detail, event_id = service.redirect(
+            context,
+            report_id,
+            payload.agency_id,
+            payload.justification,
+            payload.deadline,
+        )
+    except ReportNotFound as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Reporte não encontrado.",
+        ) from error
+    except StaffNotAuthorized as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil não pode redirecionar reportes.",
+        ) from error
+    except StaffTransitionNotAllowed as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível redirecionar este reporte para esse órgão agora.",
+        ) from error
+    except InvalidAgencyAction as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Órgão, prazo ou justificativa inválidos.",
+        ) from error
+
+    # O novo órgão recebe o aviso de encaminhamento e o cidadão, a mudança.
+    worker: ReportJobWorker = request.app.state.report_worker
+    if event_id is not None:
+        # O id do evento no nome: a fila ignora job repetido para o reporte.
+        worker.enqueue(report_id, f"notify_agency_{event_id}")
+        worker.enqueue(report_id, f"notify_status_{event_id}")
+    background_tasks.add_task(worker.run_once)
     return _to_detail_response(detail, _photo_url(photos, report_id))

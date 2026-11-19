@@ -1,6 +1,6 @@
 """Casos de uso dos servidores municipais (painel web)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -22,6 +22,9 @@ from app.models.staff import (
 from app.services.routing_service import RoutingService
 
 STATUS_EVENTS = {"em_andamento", "resolvido"}
+# Prazo dado ao novo órgão quando o redirecionamento não informa outro.
+REDIRECT_DEADLINE_HOURS = 72
+REDIRECT_ROLES = {"agency", "manager", "admin"}
 
 
 class StaffService:
@@ -143,6 +146,59 @@ class StaffService:
                 ),
                 None,
             )
+        return detail, event_id
+
+    def redirect(
+        self,
+        context: StaffContext,
+        report_id: UUID,
+        agency_id: str,
+        justification: str,
+        deadline: datetime | None,
+    ) -> tuple[ReportDetail, int | None]:
+        """Encaminha o reporte a outro órgão; devolve o detalhe e o evento a notificar."""
+        if context.role not in REDIRECT_ROLES:
+            raise StaffNotAuthorized
+        current = self.get_detail(context, report_id)
+        if current.summary.status not in {
+            ReportStatus.FORWARDED,
+            ReportStatus.IN_PROGRESS,
+        }:
+            raise StaffTransitionNotAllowed
+        agency_name = dict(self._routing.list_agencies()).get(agency_id)
+        if agency_name is None:
+            raise InvalidAgencyAction
+        if agency_id == current.agency_id:
+            raise StaffTransitionNotAllowed
+        now = self._clock()
+        if deadline is None:
+            deadline = now + timedelta(hours=REDIRECT_DEADLINE_HOURS)
+        elif deadline.utcoffset() is None or deadline <= now:
+            raise InvalidAgencyAction
+
+        actor = (
+            f"agency:{context.agency_id}"
+            if context.role == "agency"
+            else f"{context.role}:{context.user_id}"
+        )
+        detail = self._reports.redirect_report(
+            report_id,
+            agency_id,
+            agency_name,
+            self._routing.agency_email(agency_id),
+            deadline,
+            justification,
+            actor=actor,
+            actor_user_id=context.user_id,
+        )
+        event_id = next(
+            (
+                event.id
+                for event in reversed(detail.timeline)
+                if event.type == "encaminhado"
+            ),
+            None,
+        )
         return detail, event_id
 
 

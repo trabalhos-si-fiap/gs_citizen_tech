@@ -209,6 +209,24 @@ class WorkerTests(unittest.TestCase):
 
         notification_service.notify_agency.assert_called_once_with(report_id)
 
+    def test_worker_sends_agency_notification_after_redirect(self) -> None:
+        # Um redirecionamento gera outro aviso ao órgão; o nome do job leva o
+        # id do evento porque a fila ignora job repetido para o mesmo reporte.
+        report_id = uuid4()
+        self.queue.enqueue(report_id, "notify_agency_150")
+        notification_service = Mock()
+        worker = ReportJobWorker(
+            self.queue,
+            Mock(),
+            ClassificationService(FakeClassifier()),
+            worker_id="test-worker",
+            notification_service=notification_service,
+        )
+
+        self.assertTrue(worker.run_once())
+
+        notification_service.notify_agency.assert_called_once_with(report_id)
+
     def test_worker_sends_status_notification_job(self) -> None:
         report_id = uuid4()
         self.queue.enqueue(report_id, "notify_status_42")

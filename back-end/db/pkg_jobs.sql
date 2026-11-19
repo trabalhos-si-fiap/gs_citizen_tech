@@ -64,6 +64,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_jobs AS
                       'notify_overdue'
                   )
                   OR SUBSTR(etapa, 1, 14) = 'notify_status_'
+                  OR SUBSTR(etapa, 1, 14) = 'notify_agency_'
               )
               AND (
                   (status = 'pending' AND next_run_at <= SYSTIMESTAMP)

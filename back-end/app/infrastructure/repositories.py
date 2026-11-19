@@ -4,7 +4,7 @@ import hmac
 import json
 import secrets
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import UUID
@@ -146,6 +146,21 @@ class ReportRepository(Protocol):
         actor: str = "agency",
         actor_user_id: int | None = None,
     ) -> ReportDetail: ...
+
+    def redirect_report(
+        self,
+        report_id: UUID,
+        agency_id: str,
+        agency_name: str,
+        agency_email: str | None,
+        deadline: datetime,
+        justification: str,
+        *,
+        actor: str,
+        actor_user_id: int | None,
+    ) -> ReportDetail:
+        """Novo evento 'encaminhado' para outro órgão; o status volta a encaminhado."""
+        ...
 
     def list_staff_reports(
         self,
@@ -891,6 +906,41 @@ class InMemoryReportRepository:
                 "cobrado",
                 f"citizen:{user_id}",
             )
+
+    def redirect_report(
+        self,
+        report_id: UUID,
+        agency_id: str,
+        agency_name: str,
+        agency_email: str | None,
+        deadline: datetime,
+        justification: str,
+        *,
+        actor: str,
+        actor_user_id: int | None,
+    ) -> ReportDetail:
+        with self._lock:
+            stored = self._reports.get(report_id)
+            if stored is None:
+                raise ReportNotFound
+            owner_id, persisted = stored
+            route = self._routes.get(report_id)
+            if route is None:
+                raise InvalidAgencyAction
+            self._routes[report_id] = route.model_copy(
+                update={
+                    "agency_id": agency_id,
+                    "agency_name": agency_name,
+                    "agency_email": agency_email,
+                }
+            )
+            self._deadlines[report_id] = deadline
+            self._reports[report_id] = (
+                owner_id,
+                replace(persisted, status=ReportStatus.FORWARDED),
+            )
+            self._append_event(report_id, "encaminhado", actor, justification)
+            return self.get_detail(report_id)
 
     def update_agency_status(
         self,
@@ -1936,6 +1986,70 @@ class OracleReportRepository:
                     connection.rollback()
         return self.get_detail(report_id)
 
+    def redirect_report(
+        self,
+        report_id,
+        agency_id,
+        agency_name,
+        agency_email,
+        deadline,
+        justification,
+        *,
+        actor,
+        actor_user_id,
+    ):
+        # agency_email fica na tabela agencies; get_agency_email lê de lá.
+        payload = json.dumps(
+            {
+                "agency_id": agency_id,
+                "agency_name": agency_name,
+                "redirected": True,
+            },
+            ensure_ascii=False,
+        )
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            committed = False
+            try:
+                cursor.execute(
+                    "SELECT 1 FROM reports WHERE id = :report_id FOR UPDATE",
+                    report_id=str(report_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ReportNotFound
+                cursor.execute(
+                    """
+                    INSERT INTO report_events
+                        (report_id, type, actor, justification, deadline, payload)
+                    VALUES (
+                        :report_id, 'encaminhado', :actor, :justification,
+                        :deadline, :payload
+                    )
+                    """,
+                    report_id=str(report_id),
+                    actor=actor,
+                    justification=justification,
+                    deadline=deadline,
+                    payload=payload,
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO audit_log
+                        (actor_user_id, action, resource_type, resource_id, justification)
+                    VALUES (:actor_user_id, 'agency_redirect', 'report', :resource_id, :justification)
+                    """,
+                    actor_user_id=actor_user_id,
+                    resource_id=str(report_id),
+                    justification=f"{agency_id}: {justification}",
+                )
+                connection.commit()
+                committed = True
+            finally:
+                cursor.close()
+                if not committed:
+                    connection.rollback()
+        return self.get_detail(report_id)
+
     _STAFF_BASE_SQL = """
         WITH latest_status AS (
             SELECT report_id, type,
@@ -1949,11 +2063,11 @@ class OracleReportRepository:
             )
         ),
         route AS (
-            SELECT report_id, deadline,
+            SELECT report_id, id, deadline,
                    JSON_VALUE(payload, '$.agency_id') AS agency_id,
                    JSON_VALUE(payload, '$.agency_name') AS agency_name
             FROM (
-                SELECT report_id, deadline, payload,
+                SELECT report_id, id, deadline, payload,
                        ROW_NUMBER() OVER (
                            PARTITION BY report_id ORDER BY id DESC
                        ) AS rn
@@ -1963,9 +2077,9 @@ class OracleReportRepository:
             WHERE rn = 1
         ),
         progress AS (
-            SELECT report_id, deadline
+            SELECT report_id, id, deadline
             FROM (
-                SELECT report_id, deadline,
+                SELECT report_id, id, deadline,
                        ROW_NUMBER() OVER (
                            PARTITION BY report_id ORDER BY id DESC
                        ) AS rn
@@ -2007,7 +2121,11 @@ class OracleReportRepository:
                    r.lat,
                    r.lon,
                    r.received_at,
-                   SYS_EXTRACT_UTC(COALESCE(p.deadline, rt.deadline)) AS deadline,
+                   SYS_EXTRACT_UTC(
+                       -- Prazo do andamento só vale se veio depois do último
+                       -- encaminhamento (um redirecionamento zera o andamento).
+                       CASE WHEN p.id > rt.id THEN p.deadline ELSE rt.deadline END
+                   ) AS deadline,
                    rt.agency_id,
                    rt.agency_name,
                    g.confirmation_count

@@ -394,8 +394,107 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
+    # --- redirecionamento a outro órgão (B3) -------------------------------
+
+    async def redirect(self, report_id, user, **body):
+        return await self.client.post(
+            f"/v1/staff/reports/{report_id}/redirect",
+            json=body,
+            headers=self.headers(user),
+        )
+
+    async def test_agency_redirects_own_report_to_other_agency(self) -> None:
+        report_id = self.create_forwarded_report()
+
+        response = await self.redirect(
+            report_id,
+            self.zeladoria,
+            agency_id=SANEAMENTO,
+            justification="Vazamento é da rede de esgoto",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["status"], "encaminhado")
+        self.assertEqual(body["agency"]["id"], SANEAMENTO)
+        last = body["timeline"][-1]
+        self.assertEqual(last["type"], "encaminhado")
+        self.assertEqual(last["actor"], f"agency:{ZELADORIA}")
+        self.assertEqual(last["justification"], "Vazamento é da rede de esgoto")
+        new_owner = await self.client.get(
+            f"/v1/staff/reports/{report_id}", headers=self.headers(self.saneamento)
+        )
+        self.assertEqual(new_owner.status_code, 200)
+        old_owner = await self.client.get(
+            f"/v1/staff/reports/{report_id}", headers=self.headers(self.zeladoria)
+        )
+        self.assertEqual(old_owner.status_code, 404)
+        stages = {stage for (job_report, stage) in app.state.report_worker._queue._jobs if job_report == report_id}
+        self.assertIn(f"notify_agency_{last['id']}", stages)
+
+    async def test_redirect_resets_in_progress_to_forwarded(self) -> None:
+        report_id = self.create_forwarded_report()
+        deadline = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "in_progress", "deadline": deadline},
+            headers=self.headers(self.zeladoria),
+        )
+
+        response = await self.redirect(
+            report_id, self.manager, agency_id=SANEAMENTO, justification="Outro órgão"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "encaminhado")
+        self.assertIsNotNone(response.json()["deadline"])
+
+    async def test_redirect_validates_target_and_justification(self) -> None:
+        report_id = self.create_forwarded_report()
+        cases = [
+            ({"agency_id": SANEAMENTO}, 422),
+            ({"agency_id": SANEAMENTO, "justification": "  "}, 422),
+            ({"agency_id": "orgao-inexistente", "justification": "x"}, 422),
+            ({"agency_id": ZELADORIA, "justification": "mesmo órgão"}, 409),
+        ]
+        for body, expected in cases:
+            with self.subTest(body=body):
+                response = await self.redirect(report_id, self.zeladoria, **body)
+                self.assertEqual(response.status_code, expected, response.text)
+
+    async def test_redirect_permissions(self) -> None:
+        report_id = self.create_forwarded_report()
+
+        moderator = await self.redirect(
+            report_id, self.moderator, agency_id=SANEAMENTO, justification="x"
+        )
+        other_agency = await self.redirect(
+            report_id, self.saneamento, agency_id=SANEAMENTO, justification="x"
+        )
+
+        self.assertEqual(moderator.status_code, 403)
+        self.assertEqual(other_agency.status_code, 404)
+
+    async def test_resolved_report_cannot_be_redirected(self) -> None:
+        report_id = self.create_forwarded_report()
+        headers = self.headers(self.zeladoria)
+        deadline = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "in_progress", "deadline": deadline},
+            headers=headers,
+        )
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "resolved", "justification": "feito"},
+            headers=headers,
+        )
+
+        response = await self.redirect(
+            report_id, self.zeladoria, agency_id=SANEAMENTO, justification="x"
+        )
+
+        self.assertEqual(response.status_code, 409)
 
 
 class StaffDeadlineTests(unittest.TestCase):
@@ -411,3 +510,7 @@ class StaffDeadlineTests(unittest.TestCase):
 
         self.assertTrue(is_overdue(ReportStatus.FORWARDED, past, now))
         self.assertTrue(is_due_soon(ReportStatus.IN_PROGRESS, soon, now))
+
+
+if __name__ == "__main__":
+    unittest.main()

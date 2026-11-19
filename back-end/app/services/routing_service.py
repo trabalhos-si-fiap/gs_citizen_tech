@@ -40,6 +40,14 @@ class RoutingService:
         }
         return sorted(agencies.items(), key=lambda item: item[1])
 
+    def agency_email(self, agency_id: str) -> str | None:
+        """E-mail de contato do órgão na matriz vigente (para o aviso de encaminhamento)."""
+        _, rules = _load_rules()
+        return next(
+            (rule.agency_email for rule in rules if rule.agency_id == agency_id),
+            None,
+        )
+
     def find_rule(
         self,
         category: ReportCategory,
