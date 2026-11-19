@@ -151,14 +151,18 @@ def get_profile(
 
 @router.get("/agencies", response_model=StaffAgenciesResponse)
 def list_agencies(
+    scope: Literal["mine", "all"] = Query(
+        default="mine",
+        description="all: todos os órgãos (destinos de redirecionamento)",
+    ),
     context: StaffContext = Depends(get_staff_context),
     service: StaffService = Depends(get_staff_service),
 ) -> StaffAgenciesResponse:
+    agencies = (
+        service.all_agencies() if scope == "all" else service.agencies(context)
+    )
     return StaffAgenciesResponse(
-        items=[
-            AgencyResponse(id=agency_id, name=name)
-            for agency_id, name in service.agencies(context)
-        ]
+        items=[AgencyResponse(id=agency_id, name=name) for agency_id, name in agencies]
     )
 
 
