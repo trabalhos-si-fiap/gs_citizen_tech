@@ -19,6 +19,7 @@ from app.models.classification import (
     RouteDecision,
 )
 from app.models.staff import (
+    StaffAnalyticsRow,
     StaffReportItem,
     StaffSummary,
     is_due_soon,
@@ -192,6 +193,15 @@ class ReportRepository(Protocol):
     ) -> list[StaffReportItem]: ...
 
     def staff_summary(self, agency_id: str | None) -> StaffSummary: ...
+
+    def staff_analytics_rows(
+        self,
+        agency_id: str | None,
+        start: datetime,
+        end: datetime,
+    ) -> list[StaffAnalyticsRow]:
+        """Reportes canônicos do escopo recebidos no período, para a analítica."""
+        ...
 
     def list_moderation(self, limit: int) -> list[ReportSummary]: ...
 
@@ -1166,6 +1176,47 @@ class InMemoryReportRepository:
                 overdue=overdue,
                 due_soon=due_soon,
             )
+
+    def staff_analytics_rows(
+        self,
+        agency_id: str | None,
+        start: datetime,
+        end: datetime,
+    ) -> list[StaffAnalyticsRow]:
+        with self._lock:
+            rows = []
+            for report_id, persisted in self._staff_scope(agency_id):
+                if not start <= persisted.received_at <= end:
+                    continue
+                report = self._report_inputs[report_id]
+                route = self._routes.get(report_id)
+                resolved_at = next(
+                    (
+                        event.created_at
+                        for event in reversed(self._timeline.get(report_id, []))
+                        if event.type == "resolvido"
+                    ),
+                    None,
+                )
+                rows.append(
+                    StaffAnalyticsRow(
+                        report_id=report_id,
+                        received_at=persisted.received_at,
+                        resolved_at=(
+                            resolved_at
+                            if persisted.status == ReportStatus.RESOLVED
+                            else None
+                        ),
+                        category=self._effective_category(report_id),
+                        agency_id=route.agency_id if route else None,
+                        agency_name=route.agency_name if route else None,
+                        latitude=report.latitude,
+                        longitude=report.longitude,
+                        status=persisted.status,
+                        deadline=self._deadlines.get(report_id),
+                    )
+                )
+            return rows
 
     def list_moderation(self, limit: int) -> list[ReportSummary]:
         with self._lock:
@@ -2404,6 +2455,60 @@ class OracleReportRepository:
                         )
                     )
                 return items
+            finally:
+                cursor.close()
+
+    def staff_analytics_rows(self, agency_id, start, end):
+        with self._database.connection() as connection:
+            cursor = connection.cursor()
+            try:
+                parameters: dict[str, object] = {"start_at": start, "end_at": end}
+                scope = ""
+                if agency_id is not None:
+                    scope = "AND b.agency_id = :agency_id"
+                    parameters["agency_id"] = agency_id
+                cursor.execute(
+                    f"""
+                    {self._STAFF_BASE_SQL}
+                    SELECT b.id, b.received_at,
+                           (
+                               SELECT SYS_EXTRACT_UTC(MAX(e.created_at))
+                               FROM report_events e
+                               WHERE e.report_id = b.id AND e.type = 'resolvido'
+                           ) AS resolved_at,
+                           b.category, b.agency_id, b.agency_name,
+                           b.lat, b.lon, b.status, b.deadline
+                    FROM base b
+                    WHERE b.received_at BETWEEN :start_at AND :end_at {scope}
+                    """,
+                    **parameters,
+                )
+                rows = []
+                for row in cursor.fetchall():
+                    status = ReportStatus(row[8])
+                    rows.append(
+                        StaffAnalyticsRow(
+                            report_id=UUID(row[0]),
+                            received_at=row[1],
+                            resolved_at=(
+                                row[2].replace(tzinfo=timezone.utc)
+                                if row[2] is not None and status == ReportStatus.RESOLVED
+                                else None
+                            ),
+                            category=ReportCategory(row[3]) if row[3] else None,
+                            agency_id=row[4],
+                            agency_name=row[5],
+                            latitude=float(row[6]),
+                            longitude=float(row[7]),
+                            status=status,
+                            deadline=(
+                                row[9].replace(tzinfo=timezone.utc)
+                                if row[9] is not None
+                                else None
+                            ),
+                        )
+                    )
+                return rows
             finally:
                 cursor.close()
 

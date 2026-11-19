@@ -157,3 +157,19 @@ class StaffModerationRequest(BaseModel):
         if not value:
             raise ValueError("Justificativa obrigatória.")
         return value
+
+
+@dataclass(frozen=True)
+class StaffAnalyticsRow:
+    """Linha mínima para a analítica do painel (um reporte canônico)."""
+
+    report_id: UUID
+    received_at: datetime
+    resolved_at: datetime | None
+    category: ReportCategory | None
+    agency_id: str | None
+    agency_name: str | None
+    latitude: float
+    longitude: float
+    status: ReportStatus
+    deadline: datetime | None

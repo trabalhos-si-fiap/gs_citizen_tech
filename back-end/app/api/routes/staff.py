@@ -1,5 +1,7 @@
 """Rotas dos servidores municipais (painel web)."""
 
+from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from fastapi import (
@@ -43,6 +45,7 @@ from app.models.staff import (
 )
 from app.models.taxonomy import ReportCategory
 from app.services.photo_service import PhotoService
+from app.services.staff_analytics_service import StaffAnalyticsService
 from app.services.staff_service import ModerationNeedsRoute, StaffService
 
 router = APIRouter(prefix="/v1/staff", tags=["staff"])
@@ -460,3 +463,25 @@ def moderate_report(
         worker.enqueue(report_id, f"notify_status_{event_id}")
         background_tasks.add_task(worker.run_once)
     return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+def get_staff_analytics_service(request: Request) -> StaffAnalyticsService:
+    return request.app.state.staff_analytics_service
+
+
+@router.get(
+    "/analytics",
+    responses={422: {"description": "Período inválido."}},
+)
+def staff_analytics(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    bucket: Literal["day", "week"] = "day",
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffAnalyticsService = Depends(get_staff_analytics_service),
+) -> dict[str, object]:
+    """Série de abertos x concluídos e agregações do escopo do servidor."""
+    try:
+        return service.analytics(context.agency_id, from_date, to_date, bucket)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error

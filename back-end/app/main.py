@@ -41,6 +41,7 @@ from app.services.report_service import ReportService
 from app.services.routing_service import RoutingService
 from app.services.privacy_service import PrivacyService
 from app.services.analytics_service import AnalyticsService
+from app.services.staff_analytics_service import StaffAnalyticsService
 from app.services.staff_service import StaffService, provision_dev_staff
 from app.services.visual_verification_service import VisualVerificationService
 from app.infrastructure.worker import ReportJobWorker
@@ -139,6 +140,7 @@ app.state.auth_service = AuthService(auth_repository, SmtpOtpMailer(settings))
 app.state.privacy_service = PrivacyService(auth_repository, report_repository)
 app.state.analytics_service = AnalyticsService(report_repository)
 app.state.staff_service = StaffService(auth_repository, report_repository)
+app.state.staff_analytics_service = StaffAnalyticsService(report_repository)
 if settings.dev_staff_accounts:
     if not isinstance(auth_repository, InMemoryAuthRepository):
         raise RuntimeError(

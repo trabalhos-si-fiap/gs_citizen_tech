@@ -631,6 +631,36 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(empty.status_code, 422)
 
 
+    # --- analítica (B6/B7) ------------------------------------------------
+
+    async def test_analytics_is_scoped_to_the_agency(self) -> None:
+        self.create_forwarded_report(agency_id=ZELADORIA)
+        self.create_forwarded_report(agency_id=SANEAMENTO)
+
+        own = await self.client.get(
+            "/v1/staff/analytics", headers=self.headers(self.zeladoria)
+        )
+        everyone = await self.client.get(
+            "/v1/staff/analytics?bucket=week", headers=self.headers(self.manager)
+        )
+
+        self.assertEqual(own.status_code, 200, own.text)
+        own_agencies = {a["agency"]["id"] for a in own.json()["by_agency"]}
+        self.assertEqual(own_agencies, {ZELADORIA})
+        self.assertEqual(len(own.json()["timeseries"]), 30)
+        all_agencies = {a["agency"]["id"] for a in everyone.json()["by_agency"]}
+        self.assertLessEqual({ZELADORIA, SANEAMENTO}, all_agencies)
+        self.assertEqual(everyone.json()["period"]["bucket"], "week")
+
+    async def test_analytics_rejects_inverted_period(self) -> None:
+        response = await self.client.get(
+            "/v1/staff/analytics?from=2026-11-10&to=2026-11-01",
+            headers=self.headers(self.manager),
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+
 class StaffDeadlineTests(unittest.TestCase):
     def test_naive_deadline_from_oracle_is_treated_as_utc(self) -> None:
         from datetime import datetime, timedelta, timezone
