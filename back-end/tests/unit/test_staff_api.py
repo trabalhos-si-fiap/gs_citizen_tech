@@ -194,6 +194,14 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
         ids = {a["id"] for a in everything.json()["items"]}
         self.assertTrue({ZELADORIA, SANEAMENTO} <= ids)
 
+    async def test_all_agencies_are_listed_as_redirect_targets(self) -> None:
+        targets = await self.client.get(
+            "/v1/staff/agencies?scope=all", headers=self.headers(self.zeladoria)
+        )
+
+        ids = {a["id"] for a in targets.json()["items"]}
+        self.assertTrue({ZELADORIA, SANEAMENTO} <= ids)
+
     # --- listagem e escopo -----------------------------------------------
 
     async def test_list_is_limited_to_own_agency(self) -> None:

@@ -77,6 +77,10 @@ class StaffService:
             return agencies
         return [item for item in agencies if item[0] == context.agency_id]
 
+    def all_agencies(self) -> list[tuple[str, str]]:
+        """Todos os órgãos ativos da matriz (nomes públicos), para redirecionar."""
+        return self._routing.list_agencies()
+
     def agency_name(self, agency_id: str | None) -> str | None:
         if agency_id is None:
             return None
