@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     # false: a API só enfileira; o container worker processa a fila.
     inline_job_processing: bool = True
     agency_api_keys: str = ""
+    # Somente com REPORT_REPOSITORY=memory: "email:papel[:agency_id],..."
+    dev_staff_accounts: str = ""
     visual_verification_enabled: bool = False
     visual_verification_provider: str = ""
     cors_allow_origins: str = (

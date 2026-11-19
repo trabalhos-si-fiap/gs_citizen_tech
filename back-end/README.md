@@ -124,6 +124,34 @@ O Oracle enfileira a notificação de status na mesma transação do encaminhame
 único aviso por reporte cujo prazo venceu e cujo status continua aberto. Atraso
 é derivado do prazo e status atual, não um evento mutável no histórico.
 
+## Servidores municipais (`/v1/staff`)
+
+O app web usa o mesmo login por OTP do cidadão (`POST /v1/auth/login` e
+`/v1/auth/refresh`); não há OAuth/Google para servidores. O papel
+(`agency`, `manager`, `moderator`, `admin`) e o órgão são lidos do banco a cada
+requisição, nunca do JWT. Contas sem papel de servidor recebem 403.
+
+| Rota | Descrição |
+| --- | --- |
+| `GET /v1/staff/me` | Perfil, papel e órgão do servidor |
+| `GET /v1/staff/agencies` | Órgãos cadastrados |
+| `GET /v1/staff/summary` | Totais por status, atrasados e a vencer |
+| `GET /v1/staff/reports` | Lista com filtros `status`, `category`, `overdue`, `q`, `limit`, `cursor` |
+| `GET /v1/staff/reports/{id}` | Detalhe (identidade do cidadão mascarada) |
+| `POST /v1/staff/reports/{id}/status` | Altera status; somente papel `agency` |
+
+Reportes fora do escopo do órgão retornam 404. As transições válidas são
+`encaminhado → em_andamento → resolvido`; contestação exige justificativa e não
+altera o status.
+
+Provisionamento:
+
+- Oracle: aplique `@db/migrations/V008__staff_agency_operators.sql` (após V007)
+  e use `@db/provision_staff.sql` para definir papel e órgão de um usuário que
+  já tenha feito login por OTP.
+- Desenvolvimento (`REPORT_REPOSITORY=memory`): defina
+  `DEV_STAFF_ACCOUNTS=ana@prefeitura.local:agency:<agency_id>,gestor@prefeitura.local:manager`.
+
 ## Oracle
 
 Execute os scripts como proprietário do schema:

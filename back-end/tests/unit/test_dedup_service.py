@@ -240,6 +240,17 @@ class DeduplicationTests(unittest.TestCase):
 
         self.assertEqual(len(page.items), 1)
 
+    def test_staff_list_shows_one_item_per_group(self) -> None:
+        original = self.report()
+        duplicate = self.report(north_m=10, owner=8)
+        self.dedup.link_if_duplicate(duplicate)
+
+        items = self.repository.list_staff_reports(
+            None, None, None, False, None, 20, None
+        )
+
+        self.assertEqual([item.id for item in items], [original])
+
     def test_candidate_query_receives_bounding_box_and_window(self) -> None:
         calls: list[tuple[GeoBox, datetime]] = []
         original = self.repository.list_dedup_candidates

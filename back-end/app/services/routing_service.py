@@ -23,6 +23,23 @@ class RoutingService:
     def __init__(self, *, clock=lambda: datetime.now(timezone.utc)) -> None:
         self._clock = clock
 
+    def list_agencies(self) -> list[tuple[str, str]]:
+        """Órgãos distintos presentes na matriz vigente, ordenados por nome."""
+        territory_id, rules = _load_rules()
+        now = self._clock()
+        agencies = {
+            rule.agency_id: rule.agency_name
+            for rule in rules
+            if rule.territory_id == territory_id
+            and datetime.fromisoformat(rule.valid_from.replace("Z", "+00:00")) <= now
+            and (
+                rule.valid_to is None
+                or now
+                < datetime.fromisoformat(rule.valid_to.replace("Z", "+00:00"))
+            )
+        }
+        return sorted(agencies.items(), key=lambda item: item[1])
+
     def find_rule(
         self,
         category: ReportCategory,

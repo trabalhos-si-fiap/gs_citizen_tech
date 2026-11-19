@@ -14,6 +14,7 @@ from app.api.routes.me import router as me_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.moderation import router as moderation_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.staff import router as staff_router
 from app.api.routes.uploads import photos_router, router as uploads_router
 from app.core.config import settings
 from app.infrastructure.classifiers import build_classifier
@@ -37,8 +38,10 @@ from app.services.notification_service import (
 from app.services.photo_service import PhotoService
 from app.services.dedup_service import DeduplicationService
 from app.services.report_service import ReportService
+from app.services.routing_service import RoutingService
 from app.services.privacy_service import PrivacyService
 from app.services.analytics_service import AnalyticsService
+from app.services.staff_service import StaffService, provision_dev_staff
 from app.services.visual_verification_service import VisualVerificationService
 from app.infrastructure.worker import ReportJobWorker
 
@@ -135,6 +138,17 @@ app.state.report_worker = ReportJobWorker(
 app.state.auth_service = AuthService(auth_repository, SmtpOtpMailer(settings))
 app.state.privacy_service = PrivacyService(auth_repository, report_repository)
 app.state.analytics_service = AnalyticsService(report_repository)
+app.state.staff_service = StaffService(auth_repository, report_repository)
+if settings.dev_staff_accounts:
+    if not isinstance(auth_repository, InMemoryAuthRepository):
+        raise RuntimeError(
+            "DEV_STAFF_ACCOUNTS só pode ser usado com REPORT_REPOSITORY=memory."
+        )
+    provision_dev_staff(
+        auth_repository,
+        settings.dev_staff_accounts,
+        {agency_id for agency_id, _ in RoutingService().list_agencies()},
+    )
 
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -144,6 +158,7 @@ app.include_router(photos_router)
 app.include_router(me_router)
 app.include_router(analytics_router)
 app.include_router(moderation_router)
+app.include_router(staff_router)
 
 
 @app.get("/health", tags=["public"])

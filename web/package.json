@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "start": "ng serve --host 127.0.0.1",
-    "build": "ng build"
+    "build": "ng build",
+    "test": "ng test --watch=false"
   },
   "dependencies": {
     "@angular/common": "^21.0.0",
@@ -20,6 +21,8 @@
   "devDependencies": {
     "@angular/build": "^21.0.0",
     "@angular/cli": "^21.0.0",
-    "typescript": "~5.9.3"
+    "jsdom": "^31.0.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.12"
   }
 }

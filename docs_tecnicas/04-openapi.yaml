@@ -552,6 +552,114 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
+  /v1/staff/me:
+    get:
+      tags: [staff]
+      summary: Perfil do servidor municipal (papel e órgão lidos do banco)
+      description: Login pelo mesmo fluxo OTP (`/v1/auth/login`). Contas sem papel de servidor recebem 403.
+      responses:
+        "200":
+          description: Perfil
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffProfile" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/agencies:
+    get:
+      tags: [staff]
+      summary: Órgãos cadastrados (filtros do painel)
+      responses:
+        "200":
+          description: Órgãos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AgencyRef" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/summary:
+    get:
+      tags: [staff]
+      summary: Totais por status, atrasados e a vencer, no escopo do servidor
+      responses:
+        "200":
+          description: Resumo
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffSummary" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/reports:
+    get:
+      tags: [staff]
+      summary: Lista de reportes do escopo do servidor (sem dados pessoais — RN-43)
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/Category" } }
+        - { name: overdue, in: query, schema: { type: boolean, default: false } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Busca por protocolo ou descrição" }
+        - $ref: "#/components/parameters/Limit"
+        - { name: cursor, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Página de reportes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/StaffReportItem" }
+                  next_cursor: { type: string, nullable: true }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/reports/{id}:
+    get:
+      tags: [staff]
+      summary: Detalhe de um reporte do escopo (cidadão mascarado na timeline)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      responses:
+        "200":
+          description: Detalhe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/staff/reports/{id}/status:
+    post:
+      tags: [staff]
+      summary: Atualiza o status (somente papel `agency`; encaminhado → em_andamento → resolvido)
+      parameters:
+        - $ref: "#/components/parameters/ReportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgencyStatusRequest" }
+      responses:
+        "200":
+          description: Status atualizado; o cidadão é notificado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReportDetail" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
   /v1/uploads/{token}:
     put:
       tags: [uploads]
@@ -836,6 +944,48 @@ components:
         action: { type: string, enum: [in_progress, resolved, contest] }
         deadline: { type: string, format: date-time, description: "Obrigatório em in_progress" }
         justification: { type: string, maxLength: 1000, description: "Obrigatório em resolved e contest" }
+
+    StaffProfile:
+      type: object
+      required: [id, role, scope]
+      properties:
+        id: { type: string }
+        email: { type: string, nullable: true }
+        role: { type: string, enum: [agency, manager, moderator, admin] }
+        scope: { type: string, enum: [agency, all], description: "agency = restrito ao órgão vinculado" }
+        agency: { allOf: [{ $ref: "#/components/schemas/AgencyRef" }], nullable: true }
+
+    StaffSummary:
+      type: object
+      required: [total, by_status, overdue, due_soon]
+      properties:
+        total: { type: integer }
+        by_status:
+          type: object
+          additionalProperties: { type: integer }
+        overdue: { type: integer }
+        due_soon: { type: integer, description: "Prazo vence nas próximas 12 horas" }
+
+    StaffReportItem:
+      type: object
+      required: [id, protocol, status, received_at, overdue, confirmation_count]
+      properties:
+        id: { type: string, format: uuid }
+        protocol: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        category:
+          allOf: [{ $ref: "#/components/schemas/Category" }]
+          nullable: true
+        urgency: { type: string, nullable: true }
+        immediate_risk: { type: boolean, nullable: true }
+        description: { type: string, nullable: true }
+        lat: { type: number }
+        lon: { type: number }
+        received_at: { type: string, format: date-time }
+        deadline: { type: string, format: date-time, nullable: true }
+        overdue: { type: boolean }
+        agency: { allOf: [{ $ref: "#/components/schemas/AgencyRef" }], nullable: true }
+        confirmation_count: { type: integer }
 
     PublicMetrics:
       type: object
