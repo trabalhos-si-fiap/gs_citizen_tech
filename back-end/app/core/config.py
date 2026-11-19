@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     classifier: Literal["null", "fake", "ollama"] = "null"
     ollama_base_url: str = "http://127.0.0.1:11434"
+    # Se o Ollama falhar (fora do ar, sem modelo, timeout), usa este classificador.
+    # "fake" só em development: a demonstração continua sem o modelo local.
+    ai_fallback: Literal["none", "fake"] = "none"
     ai_model_small: str = "qwen2.5:3b"
     ai_model_large: str = "qwen2.5:7b"
     ai_confidence_threshold: float = Field(default=0.7, ge=0, le=1)

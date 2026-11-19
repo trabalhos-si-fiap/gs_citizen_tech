@@ -1,5 +1,7 @@
 """Rotas dos servidores municipais (painel web)."""
 
+from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from fastapi import (
@@ -28,19 +30,23 @@ from app.models.reports import (
     ReportDetail,
     ReportDetailResponse,
     ReportStatus,
+    ReportSummaryResponse,
     ReportTimelineEventResponse,
 )
 from app.models.staff import (
     StaffAgenciesResponse,
     StaffContext,
+    StaffModerationRequest,
     StaffProfileResponse,
+    StaffRedirectRequest,
     StaffReportItemResponse,
     StaffReportPageResponse,
     StaffSummaryResponse,
 )
 from app.models.taxonomy import ReportCategory
 from app.services.photo_service import PhotoService
-from app.services.staff_service import StaffService
+from app.services.staff_analytics_service import StaffAnalyticsService
+from app.services.staff_service import ModerationNeedsRoute, StaffService
 
 router = APIRouter(prefix="/v1/staff", tags=["staff"])
 
@@ -302,3 +308,180 @@ def update_status(
         worker.enqueue(report_id, f"notify_status_{event_id}")
         background_tasks.add_task(worker.run_once)
     return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+@router.post(
+    "/reports/{report_id}/redirect",
+    response_model=ReportDetailResponse,
+    responses={
+        403: {"description": "Perfil sem permissão para redirecionar."},
+        404: {"description": "Reporte não encontrado no seu escopo."},
+        409: {"description": "Estado não permite redirecionar ou órgão é o atual."},
+        422: {"description": "Órgão, prazo ou justificativa inválidos."},
+    },
+)
+def redirect_report(
+    report_id: UUID,
+    payload: StaffRedirectRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffService = Depends(get_staff_service),
+    photos: PhotoService = Depends(get_photo_service),
+) -> ReportDetailResponse:
+    try:
+        detail, event_id = service.redirect(
+            context,
+            report_id,
+            payload.agency_id,
+            payload.justification,
+            payload.deadline,
+        )
+    except ReportNotFound as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Reporte não encontrado.",
+        ) from error
+    except StaffNotAuthorized as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil não pode redirecionar reportes.",
+        ) from error
+    except StaffTransitionNotAllowed as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Não é possível redirecionar este reporte para esse órgão agora.",
+        ) from error
+    except InvalidAgencyAction as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Órgão, prazo ou justificativa inválidos.",
+        ) from error
+
+    # O novo órgão recebe o aviso de encaminhamento e o cidadão, a mudança.
+    worker: ReportJobWorker = request.app.state.report_worker
+    if event_id is not None:
+        # O id do evento no nome: a fila ignora job repetido para o reporte.
+        worker.enqueue(report_id, f"notify_agency_{event_id}")
+        worker.enqueue(report_id, f"notify_status_{event_id}")
+    background_tasks.add_task(worker.run_once)
+    return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+@router.get(
+    "/moderation",
+    responses={403: {"description": "Somente moderadores e administradores."}},
+)
+def moderation_queue(
+    limit: int = Query(default=50, ge=1, le=100),
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffService = Depends(get_staff_service),
+) -> dict[str, object]:
+    try:
+        reports = service.moderation_queue(context, limit)
+    except StaffNotAuthorized as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Somente moderadores acessam a fila de moderação.",
+        ) from error
+    return {
+        "items": [
+            ReportSummaryResponse(
+                id=report.id,
+                protocol=report.protocol,
+                status=report.status,
+                category=report.category,
+                lat=report.latitude,
+                lon=report.longitude,
+                received_at=report.received_at,
+                group_id=report.group_id,
+                confirmation_count=report.confirmation_count,
+            )
+            for report in reports
+        ],
+        "count": len(reports),
+    }
+
+
+@router.post(
+    "/moderation/{report_id}/{decision}",
+    response_model=ReportDetailResponse,
+    responses={
+        403: {"description": "Somente moderadores e administradores."},
+        404: {"description": "Reporte não encontrado."},
+        409: {"description": "O reporte não está em moderação."},
+        422: {"description": "Decisão, categoria ou justificativa inválidas."},
+    },
+)
+def moderate_report(
+    report_id: UUID,
+    decision: str,
+    payload: StaffModerationRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffService = Depends(get_staff_service),
+    photos: PhotoService = Depends(get_photo_service),
+) -> ReportDetailResponse:
+    if decision not in {"approve", "reject"}:
+        raise HTTPException(status_code=404, detail="Decisão inexistente.")
+    try:
+        detail, event_id = service.moderate(
+            context,
+            report_id,
+            decision,
+            payload.justification,
+            payload.category,
+            payload.subcategory,
+        )
+    except ReportNotFound as error:
+        raise HTTPException(status_code=404, detail="Reporte não encontrado.") from error
+    except StaffNotAuthorized as error:
+        raise HTTPException(
+            status_code=403,
+            detail="Somente moderadores podem decidir a moderação.",
+        ) from error
+    except StaffTransitionNotAllowed as error:
+        raise HTTPException(
+            status_code=409,
+            detail="O reporte não está em moderação.",
+        ) from error
+    except ModerationNeedsRoute as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe uma categoria com órgão responsável para aprovar.",
+        ) from error
+    except InvalidAgencyAction as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Categoria, subcategoria ou justificativa inválidas.",
+        ) from error
+
+    if event_id is not None:
+        worker: ReportJobWorker = request.app.state.report_worker
+        worker.enqueue(report_id, f"notify_agency_{event_id}")
+        worker.enqueue(report_id, f"notify_status_{event_id}")
+        background_tasks.add_task(worker.run_once)
+    return _to_detail_response(detail, _photo_url(photos, report_id))
+
+
+def get_staff_analytics_service(request: Request) -> StaffAnalyticsService:
+    return request.app.state.staff_analytics_service
+
+
+@router.get(
+    "/analytics",
+    responses={422: {"description": "Período inválido."}},
+)
+def staff_analytics(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    bucket: Literal["day", "week"] = "day",
+    context: StaffContext = Depends(get_staff_context),
+    service: StaffAnalyticsService = Depends(get_staff_analytics_service),
+) -> dict[str, object]:
+    """Série de abertos x concluídos e agregações do escopo do servidor."""
+    try:
+        return service.analytics(context.agency_id, from_date, to_date, bucket)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error

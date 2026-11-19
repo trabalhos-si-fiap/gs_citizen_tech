@@ -192,6 +192,7 @@ def list_nearby_reports(
                 group_id=item.summary.group_id,
                 status=item.summary.status,
                 category=item.summary.category,
+                subcategory=item.summary.subcategory,
                 lat=item.summary.latitude,
                 lon=item.summary.longitude,
                 confirmation_count=item.summary.confirmation_count,

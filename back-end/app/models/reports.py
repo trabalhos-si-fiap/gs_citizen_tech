@@ -24,6 +24,8 @@ class TriageState(StrEnum):
     CONFIRMED = "confirmed"
     AUTO_CONFIRMED = "auto_confirmed"
     IN_MODERATION = "in_moderation"
+    # Recusado na moderação: fica fora do mapa e do agrupamento.
+    REJECTED = "rejected"
 
 
 class CreateReportRequest(BaseModel):
@@ -244,6 +246,7 @@ class ReportSummary:
     received_at: datetime
     group_id: str
     confirmation_count: int
+    subcategory: str | None = None
 
 
 @dataclass(frozen=True)

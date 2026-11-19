@@ -394,8 +394,271 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
+    # --- redirecionamento a outro órgão (B3) -------------------------------
+
+    async def redirect(self, report_id, user, **body):
+        return await self.client.post(
+            f"/v1/staff/reports/{report_id}/redirect",
+            json=body,
+            headers=self.headers(user),
+        )
+
+    async def test_agency_redirects_own_report_to_other_agency(self) -> None:
+        report_id = self.create_forwarded_report()
+
+        response = await self.redirect(
+            report_id,
+            self.zeladoria,
+            agency_id=SANEAMENTO,
+            justification="Vazamento é da rede de esgoto",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["status"], "encaminhado")
+        self.assertEqual(body["agency"]["id"], SANEAMENTO)
+        last = body["timeline"][-1]
+        self.assertEqual(last["type"], "encaminhado")
+        self.assertEqual(last["actor"], f"agency:{ZELADORIA}")
+        self.assertEqual(last["justification"], "Vazamento é da rede de esgoto")
+        new_owner = await self.client.get(
+            f"/v1/staff/reports/{report_id}", headers=self.headers(self.saneamento)
+        )
+        self.assertEqual(new_owner.status_code, 200)
+        old_owner = await self.client.get(
+            f"/v1/staff/reports/{report_id}", headers=self.headers(self.zeladoria)
+        )
+        self.assertEqual(old_owner.status_code, 404)
+        stages = {stage for (job_report, stage) in app.state.report_worker._queue._jobs if job_report == report_id}
+        self.assertIn(f"notify_agency_{last['id']}", stages)
+
+    async def test_redirect_resets_in_progress_to_forwarded(self) -> None:
+        report_id = self.create_forwarded_report()
+        deadline = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "in_progress", "deadline": deadline},
+            headers=self.headers(self.zeladoria),
+        )
+
+        response = await self.redirect(
+            report_id, self.manager, agency_id=SANEAMENTO, justification="Outro órgão"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "encaminhado")
+        self.assertIsNotNone(response.json()["deadline"])
+
+    async def test_redirect_validates_target_and_justification(self) -> None:
+        report_id = self.create_forwarded_report()
+        cases = [
+            ({"agency_id": SANEAMENTO}, 422),
+            ({"agency_id": SANEAMENTO, "justification": "  "}, 422),
+            ({"agency_id": "orgao-inexistente", "justification": "x"}, 422),
+            ({"agency_id": ZELADORIA, "justification": "mesmo órgão"}, 409),
+        ]
+        for body, expected in cases:
+            with self.subTest(body=body):
+                response = await self.redirect(report_id, self.zeladoria, **body)
+                self.assertEqual(response.status_code, expected, response.text)
+
+    async def test_redirect_permissions(self) -> None:
+        report_id = self.create_forwarded_report()
+
+        moderator = await self.redirect(
+            report_id, self.moderator, agency_id=SANEAMENTO, justification="x"
+        )
+        other_agency = await self.redirect(
+            report_id, self.saneamento, agency_id=SANEAMENTO, justification="x"
+        )
+
+        self.assertEqual(moderator.status_code, 403)
+        self.assertEqual(other_agency.status_code, 404)
+
+    async def test_resolved_report_cannot_be_redirected(self) -> None:
+        report_id = self.create_forwarded_report()
+        headers = self.headers(self.zeladoria)
+        deadline = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "in_progress", "deadline": deadline},
+            headers=headers,
+        )
+        await self.client.post(
+            f"/v1/staff/reports/{report_id}/status",
+            json={"action": "resolved", "justification": "feito"},
+            headers=headers,
+        )
+
+        response = await self.redirect(
+            report_id, self.zeladoria, agency_id=SANEAMENTO, justification="x"
+        )
+
+        self.assertEqual(response.status_code, 409)
+
+
+    # --- moderação (B4) ---------------------------------------------------
+
+    def create_report_in_moderation(self, *, subcategory=None):
+        """Reporte classificado sem órgão (ex.: baixa confiança) na fila."""
+        report_id = uuid4()
+        self.reports.create(
+            NewReport(
+                id=report_id,
+                description="Situação estranha na praça",
+                has_photo=False,
+                category=None,
+                latitude=-23.55,
+                longitude=-46.63,
+                location_accuracy_m=None,
+                anonymous=False,
+                client_created_at=datetime.now(timezone.utc),
+                correlation_id=uuid4(),
+                user_id=5002,
+                requester_user_id=5002,
+            )
+        )
+        self.reports.record_classification(
+            report_id,
+            ClassificationResult(
+                category=ReportCategory.TO_CLASSIFY,
+                subcategory="a_classificar",
+                urgency=None,
+                confidence=0.2,
+                immediate_risk=None,
+                model="test",
+                source="ai",
+            ),
+        )
+        self.reports.mark_for_moderation(report_id)
+        return report_id
+
+    async def moderate(self, report_id, decision, user, **body):
+        return await self.client.post(
+            f"/v1/staff/moderation/{report_id}/{decision}",
+            json=body,
+            headers=self.headers(user),
+        )
+
+    async def test_moderation_queue_lists_reports_for_moderators(self) -> None:
+        report_id = self.create_report_in_moderation()
+
+        queue = await self.client.get(
+            "/v1/staff/moderation", headers=self.headers(self.moderator)
+        )
+        forbidden = await self.client.get(
+            "/v1/staff/moderation", headers=self.headers(self.zeladoria)
+        )
+
+        self.assertEqual(queue.status_code, 200, queue.text)
+        self.assertIn(str(report_id), [item["id"] for item in queue.json()["items"]])
+        self.assertEqual(forbidden.status_code, 403)
+
+    async def test_approve_with_category_forwards_to_responsible_agency(self) -> None:
+        report_id = self.create_report_in_moderation()
+
+        response = await self.moderate(
+            report_id,
+            "approve",
+            self.moderator,
+            category="risco_urbano",
+            subcategory="buraco_via",
+            justification="Foto mostra buraco na via",
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["status"], "encaminhado")
+        self.assertEqual(body["triage_state"], "confirmed")
+        self.assertEqual(body["agency"]["id"], ZELADORIA)
+        self.assertEqual(body["classification"]["subcategory"], "buraco_via")
+        approved = [e for e in body["timeline"] if e["type"] == "moderacao_aprovada"]
+        self.assertEqual(approved[-1]["justification"], "Foto mostra buraco na via")
+        queue = await self.client.get(
+            "/v1/staff/moderation", headers=self.headers(self.moderator)
+        )
+        self.assertNotIn(str(report_id), [i["id"] for i in queue.json()["items"]])
+
+    async def test_approve_flagged_forwarded_report_keeps_its_agency(self) -> None:
+        report_id = self.create_forwarded_report()
+        self.reports.mark_for_moderation(report_id)
+
+        response = await self.moderate(
+            report_id, "approve", self.moderator, justification="Denúncia improcedente"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["agency"]["id"], ZELADORIA)
+        self.assertEqual(response.json()["triage_state"], "confirmed")
+
+    async def test_approve_without_category_for_unrouted_report_is_422(self) -> None:
+        report_id = self.create_report_in_moderation()
+
+        response = await self.moderate(
+            report_id, "approve", self.moderator, justification="ok"
+        )
+
+        self.assertEqual(response.status_code, 422)
+
+    async def test_reject_hides_report_and_records_justification(self) -> None:
+        report_id = self.create_report_in_moderation()
+
+        response = await self.moderate(
+            report_id, "reject", self.moderator, justification="Conteúdo ofensivo"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["triage_state"], "rejected")
+        rejected = response.json()["timeline"][-1]
+        self.assertEqual(rejected["type"], "moderacao_rejeitada")
+        self.assertEqual(rejected["justification"], "Conteúdo ofensivo")
+        again = await self.moderate(
+            report_id, "reject", self.moderator, justification="de novo"
+        )
+        self.assertEqual(again.status_code, 409)
+
+    async def test_moderation_requires_moderator_and_justification(self) -> None:
+        report_id = self.create_report_in_moderation()
+
+        agency = await self.moderate(
+            report_id, "reject", self.zeladoria, justification="x"
+        )
+        empty = await self.moderate(
+            report_id, "reject", self.moderator, justification=" "
+        )
+
+        self.assertEqual(agency.status_code, 403)
+        self.assertEqual(empty.status_code, 422)
+
+
+    # --- analítica (B6/B7) ------------------------------------------------
+
+    async def test_analytics_is_scoped_to_the_agency(self) -> None:
+        self.create_forwarded_report(agency_id=ZELADORIA)
+        self.create_forwarded_report(agency_id=SANEAMENTO)
+
+        own = await self.client.get(
+            "/v1/staff/analytics", headers=self.headers(self.zeladoria)
+        )
+        everyone = await self.client.get(
+            "/v1/staff/analytics?bucket=week", headers=self.headers(self.manager)
+        )
+
+        self.assertEqual(own.status_code, 200, own.text)
+        own_agencies = {a["agency"]["id"] for a in own.json()["by_agency"]}
+        self.assertEqual(own_agencies, {ZELADORIA})
+        self.assertEqual(len(own.json()["timeseries"]), 30)
+        all_agencies = {a["agency"]["id"] for a in everyone.json()["by_agency"]}
+        self.assertLessEqual({ZELADORIA, SANEAMENTO}, all_agencies)
+        self.assertEqual(everyone.json()["period"]["bucket"], "week")
+
+    async def test_analytics_rejects_inverted_period(self) -> None:
+        response = await self.client.get(
+            "/v1/staff/analytics?from=2026-11-10&to=2026-11-01",
+            headers=self.headers(self.manager),
+        )
+
+        self.assertEqual(response.status_code, 422)
 
 
 class StaffDeadlineTests(unittest.TestCase):
@@ -411,3 +674,7 @@ class StaffDeadlineTests(unittest.TestCase):
 
         self.assertTrue(is_overdue(ReportStatus.FORWARDED, past, now))
         self.assertTrue(is_due_soon(ReportStatus.IN_PROGRESS, soon, now))
+
+
+if __name__ == "__main__":
+    unittest.main()

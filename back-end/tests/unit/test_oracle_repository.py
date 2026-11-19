@@ -421,6 +421,23 @@ class OracleRepositoryTests(unittest.TestCase):
         self.assertTrue(database.fake_connection.committed)
 
 
+class OracleNotificationTokenTests(unittest.TestCase):
+    def test_tokens_come_from_registered_devices(self) -> None:
+        # notification_links também tem push_token; sem qualificar, o Oracle
+        # recusa a consulta (ORA-00918) e nenhum aviso de status sai.
+        database = FakeDatabase()
+        cursor = database.fake_connection.fake_cursor
+        cursor.fetchall = lambda: [("device-token",)]
+
+        tokens = OracleReportRepository(database).list_notification_tokens(
+            UUID("8d11c206-f849-4631-9c0f-d27a23fc7634")
+        )
+
+        query = " ".join(cursor.executed_query.split())
+        self.assertIn("SELECT DISTINCT device.push_token", query)
+        self.assertEqual(tokens, ["device-token"])
+
+
 class OracleAreaQueryTests(unittest.TestCase):
     def test_list_in_area_filters_box_and_hides_moderation(self) -> None:
         report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
@@ -438,6 +455,7 @@ class OracleAreaQueryTests(unittest.TestCase):
                 received_at,
                 "grupo-9",
                 4,
+                "buraco_via",
             )
         ]
         repository = OracleReportRepository(database)
@@ -458,7 +476,7 @@ class OracleAreaQueryTests(unittest.TestCase):
         query = " ".join(cursor.executed_query.split())
         self.assertIn("r.lat BETWEEN :min_lat AND :max_lat", query)
         self.assertIn("r.lon BETWEEN :min_lon AND :max_lon", query)
-        self.assertIn("r.triage_state <> 'in_moderation'", query)
+        self.assertIn("r.triage_state NOT IN ('in_moderation', 'rejected')", query)
         self.assertIn("ORDER BY r.received_at DESC", query)
         self.assertTrue(cursor.closed)
         self.assertEqual(len(found), 1)
@@ -469,6 +487,7 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual((item.latitude, item.longitude), (-23.5501, -46.6331))
         self.assertEqual(item.group_id, "grupo-9")
         self.assertEqual(item.confirmation_count, 4)
+        self.assertEqual(item.subcategory, "buraco_via")
 
 
 

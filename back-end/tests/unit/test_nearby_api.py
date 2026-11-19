@@ -80,6 +80,23 @@ class NearbyApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(item["distance_m"], 111, delta=2)
         self.assertIsNone(body["next_cursor"])
 
+    async def test_returns_classified_subcategory(self) -> None:
+        report_id = await self.create_report(self.lat + 0.001, self.lon)
+        triage = await self.client.post(
+            f"/v1/reports/{report_id}/triage",
+            json={
+                "action": "correct",
+                "category": "risco_urbano",
+                "subcategory": "buraco_via",
+            },
+            headers={"Authorization": f"Bearer {create_access_token(51)}"},
+        )
+        self.assertEqual(triage.status_code, 200, triage.text)
+
+        item = (await self.nearby()).json()["items"][0]
+
+        self.assertEqual(item["subcategory"], "buraco_via")
+
     async def test_coordinates_are_coarsened_for_privacy(self) -> None:
         await self.create_report(self.lat + 0.0012345, self.lon + 0.0006789)
 

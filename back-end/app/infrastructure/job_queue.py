@@ -91,6 +91,7 @@ class InMemoryJobQueue:
                         "notify_overdue",
                     }
                     or job.stage.startswith("notify_status_")
+                    or job.stage.startswith("notify_agency_")
                 )
                 and (
                     (job.status == "pending" and job.next_run_at <= now)

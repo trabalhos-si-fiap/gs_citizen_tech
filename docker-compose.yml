@@ -40,7 +40,11 @@ x-backend: &backend
     SMTP_HOST: mailpit
     SMTP_PORT: "1025"
     PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
-    CLASSIFIER: ${CLASSIFIER:-null}
+    # Ollama local (perfil "ai"); sem ele, AI_FALLBACK=fake mantém a demo rodando.
+    CLASSIFIER: ${CLASSIFIER:-ollama}
+    AI_FALLBACK: ${AI_FALLBACK:-fake}
+    AI_MODEL_SMALL: ${AI_MODEL_SMALL:-qwen2.5:3b}
+    AI_MODEL_LARGE: ${AI_MODEL_LARGE:-qwen2.5:7b}
     OLLAMA_BASE_URL: http://ollama:11434
     # Jobs são processados só pelo container worker.
     INLINE_JOB_PROCESSING: "false"

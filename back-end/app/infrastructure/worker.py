@@ -149,7 +149,11 @@ class ReportJobWorker:
                 photo_key = self._photo_storage.process_upload(job.report_id)
                 self._repository.set_photo_key(job.report_id, photo_key)
                 self._photo_storage.discard_upload(job.report_id)
-            elif job.stage == "notify_agency" and self._notification_service is not None:
+            elif (
+                job.stage == "notify_agency"
+                # notify_agency_<evento>: aviso ao novo órgão após redirecionamento.
+                or job.stage.startswith("notify_agency_")
+            ) and self._notification_service is not None:
                 self._notification_service.notify_agency(job.report_id)
             elif (
                 job.stage.startswith("notify_status_")

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.reports import AgencyResponse, ReportStatus
 from app.models.taxonomy import ReportCategory
@@ -124,3 +124,52 @@ class StaffReportItemResponse(BaseModel):
 class StaffReportPageResponse(BaseModel):
     items: list[StaffReportItemResponse]
     next_cursor: str | None
+
+
+class StaffRedirectRequest(BaseModel):
+    """Redireciona o reporte a outro órgão; a justificativa vai para a timeline."""
+
+    agency_id: str = Field(min_length=1, max_length=64)
+    justification: str = Field(max_length=1000)
+    # Sem prazo informado, o novo órgão recebe REDIRECT_DEADLINE_HOURS.
+    deadline: datetime | None = None
+
+    @field_validator("justification")
+    @classmethod
+    def _justification_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Justificativa obrigatória.")
+        return value
+
+
+class StaffModerationRequest(BaseModel):
+    """Decisão da moderação; categoria só na aprovação (reclassifica e roteia)."""
+
+    justification: str = Field(max_length=1000)
+    category: ReportCategory | None = None
+    subcategory: str | None = Field(default=None, max_length=64)
+
+    @field_validator("justification")
+    @classmethod
+    def _justification_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Justificativa obrigatória.")
+        return value
+
+
+@dataclass(frozen=True)
+class StaffAnalyticsRow:
+    """Linha mínima para a analítica do painel (um reporte canônico)."""
+
+    report_id: UUID
+    received_at: datetime
+    resolved_at: datetime | None
+    category: ReportCategory | None
+    agency_id: str | None
+    agency_name: str | None
+    latitude: float
+    longitude: float
+    status: ReportStatus
+    deadline: datetime | None
