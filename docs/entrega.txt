@@ -1,0 +1,19 @@
+Entrega - Global Solution Citizen Tech
+Projeto: Reclame Já!
+Turma: 3SIOA
+
+Integrantes:
+Elias da Silva de Moura — RM557337
+Juliana Silva Nascimento — RM559181
+Marcella Lara Esteves de Almeida — RM558910
+Murilo Guimarães Godoi — RM556131
+
+
+Vídeo Pitch:
+Vídeo Técnico:
+Repositório GitHub: https://github.com/trabalhos-si-fiap/gs_citizen_tech
+
+Entregáveis solicitados da entrega -- Caminho do arquivo no Repositório: 
+Documentação do projeto em PDF - docs/documentacao
+Arquivos Slides - docs/slides
+Documentação Banco de Dados (MER/DER) - docs/banco-de-dados
