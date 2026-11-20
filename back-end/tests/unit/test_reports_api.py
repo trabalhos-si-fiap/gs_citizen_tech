@@ -273,6 +273,101 @@ class ReportApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(other_payload["id"], received_ids)
         self.assertIsNone(second_page.json()["next_cursor"])
 
+    # --- endereço textual (geocodificação reversa feita no aparelho) -------
+
+    async def get_detail_json(self, report_id: object, user_id: int) -> dict:
+        response = await self.client.get(
+            f"/v1/reports/{report_id}",
+            headers={"Authorization": f"Bearer {create_access_token(user_id)}"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    async def test_detail_returns_trimmed_address_sent_by_the_app(self) -> None:
+        payload = self.report_payload(
+            address="  Rua Exemplo, 123 – Bairro, Cidade  "
+        )
+        created = await self.post_report(payload, user_id=81)
+
+        detail = await self.get_detail_json(payload["id"], 81)
+
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(detail["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+
+    async def test_missing_or_blank_address_is_returned_as_null(self) -> None:
+        # Versões antigas do app não enviam o campo; o geocodificador pode falhar.
+        for overrides in ({}, {"address": None}, {"address": ""}, {"address": "   "}):
+            with self.subTest(overrides=overrides):
+                payload = self.report_payload(**overrides)
+                created = await self.post_report(payload, user_id=82)
+
+                detail = await self.get_detail_json(payload["id"], 82)
+
+                self.assertEqual(created.status_code, 201, created.text)
+                self.assertIn("address", detail)
+                self.assertIsNone(detail["address"])
+
+    async def test_address_is_limited_to_200_characters_after_trimming(self) -> None:
+        too_long = await self.post_report(self.report_payload(address="R" * 201))
+        at_limit = await self.post_report(
+            self.report_payload(address=f"  {'R' * 200}  ")
+        )
+
+        self.assertEqual(too_long.status_code, 422)
+        self.assertEqual(at_limit.status_code, 201, at_limit.text)
+
+    async def test_my_reports_items_carry_description_subcategory_and_address(self) -> None:
+        # O app usa a descrição como título do card (antes: "Ocorrência urbana").
+        payload = self.report_payload(
+            description="Vazamento de esgoto na rua.",
+            address="Rua Exemplo, 123 – Bairro, Cidade",
+        )
+        await self.post_report(payload, user_id=83)
+        headers = {"Authorization": f"Bearer {create_access_token(83)}"}
+        triaged = await self.client.post(
+            f"/v1/reports/{payload['id']}/triage",
+            json={
+                "action": "correct",
+                "category": "risco_urbano",
+                "subcategory": "esgoto_vazamento",
+            },
+            headers=headers,
+        )
+        self.assertEqual(triaged.status_code, 200, triaged.text)
+
+        listed = await self.client.get("/v1/me/reports", headers=headers)
+
+        self.assertEqual(listed.status_code, 200)
+        item = listed.json()["items"][0]
+        self.assertEqual(item["id"], payload["id"])
+        self.assertEqual(item["description"], "Vazamento de esgoto na rua.")
+        self.assertEqual(item["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+        self.assertEqual(item["subcategory"], "esgoto_vazamento")
+        self.assertEqual(
+            item["subcategory"],
+            triaged.json()["classification"]["subcategory"],
+        )
+        # Campos já existentes continuam no item (compatibilidade).
+        for field in (
+            "protocol", "status", "category", "lat", "lon",
+            "received_at", "group_id", "confirmation_count",
+        ):
+            self.assertIn(field, item)
+
+    async def test_my_reports_item_without_address_returns_null(self) -> None:
+        payload = self.report_payload()
+        await self.post_report(payload, user_id=84)
+
+        listed = await self.client.get(
+            "/v1/me/reports",
+            headers={"Authorization": f"Bearer {create_access_token(84)}"},
+        )
+
+        item = listed.json()["items"][0]
+        self.assertIn("address", item)
+        self.assertIsNone(item["address"])
+        self.assertIn("subcategory", item)
+
     async def test_reused_report_id_from_another_user_is_rejected(self) -> None:
         payload = self.report_payload()
         created = await self.post_report(payload, user_id=23)

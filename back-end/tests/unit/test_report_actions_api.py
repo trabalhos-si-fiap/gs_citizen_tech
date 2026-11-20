@@ -108,6 +108,39 @@ class ReportActionsApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    async def test_agency_status_response_keeps_report_address(self) -> None:
+        # Mesmo schema ReportDetail: null aqui diria que o reporte não tem endereço.
+        from datetime import datetime, timezone
+        from app.models.reports import NewReport
+
+        report_id = uuid4()
+        app.state.report_service._repository.create(
+            NewReport(
+                id=report_id,
+                description="Buraco",
+                has_photo=False,
+                category=None,
+                latitude=-23.55,
+                longitude=-46.63,
+                location_accuracy_m=None,
+                anonymous=False,
+                client_created_at=datetime.now(timezone.utc),
+                correlation_id=uuid4(),
+                user_id=73,
+                requester_user_id=73,
+                address="Rua Exemplo, 123 – Bairro, Cidade",
+            )
+        )
+
+        response = await self.client.post(
+            f"/v1/agency/reports/{report_id}/status",
+            json={"action": "contest", "justification": "Fora da nossa área."},
+            headers={"X-API-Key": "test-agency-key"},
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+
 
 if __name__ == "__main__":
     unittest.main()

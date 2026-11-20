@@ -99,6 +99,7 @@ def _to_detail_response(
         group_id=summary.group_id,
         confirmation_count=summary.confirmation_count,
         description=detail.description,
+        address=summary.address,
         photo_url=photo_url,
         anonymous=detail.anonymous,
         has_photo=detail.has_photo,
@@ -231,6 +232,7 @@ def list_reports(
                     else None
                 ),
                 confirmation_count=item.confirmation_count,
+                address=item.address,
             )
             for item in page
         ],

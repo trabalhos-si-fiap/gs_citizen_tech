@@ -291,6 +291,122 @@ class ReportUpdatesSmokeTests(unittest.TestCase):
         self.assertIsNotNone(detail["agency"])
 
 
+def agency_status(report_id: str, payload: dict) -> int:
+    api_key = (ROOT / "secrets" / "agency_api_keys.txt").read_text().split(",")[0].strip()
+    req = urllib.request.Request(
+        f"{API}/v1/agency/reports/{report_id}/status",
+        data=json.dumps(payload).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return response.status
+
+
+def resolved_report() -> str:
+    """Cria um reporte e o resolve pelo órgão (a média de resposta precisa dele)."""
+    token = citizen_token()
+    lat = round(-23.55 + random.uniform(-0.05, 0.05), 6)
+    lon = round(-46.63 + random.uniform(-0.05, 0.05), 6)
+    report_id = create_report(
+        token, lat, lon, f"Poste apagado na esquina {uuid.uuid4().hex[:6]} (teste)"
+    )
+    detail = wait_triage_settled(report_id, token)
+    if detail.get("triage_state") == "awaiting_user":
+        request("POST", f"{API}/v1/reports/{report_id}/triage", {"action": "confirm"}, token)
+    deadline = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    assert agency_status(report_id, {"action": "in_progress", "deadline": deadline}) == 200
+    assert agency_status(
+        report_id, {"action": "resolved", "justification": "Lâmpada trocada (teste)."}
+    ) == 200
+    return report_id
+
+
+class PublicMetricsSmokeTests(unittest.TestCase):
+    """Indicadores públicos com reportes resolvidos no Oracle (tela e CSV do painel)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        resolved_report()
+
+    def test_public_metrics_report_average_response_in_hours(self) -> None:
+        status, body, _ = request("GET", f"{API}/v1/public/metrics")
+
+        self.assertEqual(status, 200, body)
+        self.assertIsInstance(body["totals"]["avg_response_hours"], (int, float))
+        self.assertGreaterEqual(body["totals"]["avg_response_hours"], 0)
+
+    def test_public_metrics_export_csv(self) -> None:
+        req = urllib.request.Request(f"{API}/v1/public/metrics?format=csv")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                status = response.status
+                content_type = response.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as error:
+            status, content_type = error.code, error.headers.get("Content-Type", "")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/csv", content_type)
+
+
+UTC_SUFFIX = re.compile(r"(Z|\+00:00)$")
+
+
+class ReportAddressSmokeTests(unittest.TestCase):
+    """Endereço textual (V011 + PKG_REPORTES) e datas com fuso vindos do Oracle."""
+
+    def test_address_round_trips_and_dates_carry_utc_offset(self) -> None:
+        token = citizen_token()
+        report_id = str(uuid.uuid4())
+        lat = round(-23.55 + random.uniform(-0.05, 0.05), 6)
+        lon = round(-46.63 + random.uniform(-0.05, 0.05), 6)
+        status, created, _ = request("POST", f"{API}/v1/reports", {
+            "id": report_id,
+            "description": f"Calçada quebrada {uuid.uuid4().hex[:6]} (teste)",
+            "category": "risco_urbano",
+            "lat": lat,
+            "lon": lon,
+            "client_created_at": datetime.now(timezone.utc).isoformat(),
+            "address": "  Rua Exemplo, 123 – Bairro, Cidade  ",
+        }, token)
+        self.assertEqual(status, 201, created)
+        self.assertRegex(created["received_at"], UTC_SUFFIX)
+
+        _, detail, _ = request("GET", f"{API}/v1/reports/{report_id}", token=token)
+        self.assertEqual(detail["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+        self.assertRegex(detail["received_at"], UTC_SUFFIX)
+        for event in detail["timeline"]:
+            self.assertRegex(event["created_at"], UTC_SUFFIX)
+
+        _, mine, _ = request("GET", f"{API}/v1/me/reports", token=token)
+        item = next(entry for entry in mine["items"] if entry["id"] == report_id)
+        self.assertEqual(item["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+        self.assertTrue(item["description"].startswith("Calçada quebrada"))
+        self.assertIn("subcategory", item)
+        self.assertRegex(item["received_at"], UTC_SUFFIX)
+
+        # Mapa público: endereço fica fora da superfície sem autenticação.
+        _, nearby, _ = request(
+            "GET", f"{API}/v1/reports/nearby?lat={lat}&lon={lon}&radius_m=50"
+        )
+        public = next(entry for entry in nearby["items"] if entry["id"] == report_id)
+        self.assertNotIn("address", public)
+
+    def test_report_without_address_is_accepted_with_null(self) -> None:
+        token = citizen_token()
+        report_id = create_report(
+            token,
+            round(-23.55 + random.uniform(-0.05, 0.05), 6),
+            round(-46.63 + random.uniform(-0.05, 0.05), 6),
+            f"Sem endereço {uuid.uuid4().hex[:6]} (teste)",
+        )
+
+        _, detail, _ = request("GET", f"{API}/v1/reports/{report_id}", token=token)
+
+        self.assertIn("address", detail)
+        self.assertIsNone(detail["address"])
+
+
 class ContainerRuntimeTests(unittest.TestCase):
     def test_built_containers_run_as_non_root(self) -> None:
         for service in ("api", "worker", "web"):

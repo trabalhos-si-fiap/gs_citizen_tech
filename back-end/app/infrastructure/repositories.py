@@ -6,7 +6,7 @@ import secrets
 import threading
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
+from typing import Protocol, overload
 from uuid import UUID
 
 from app.core.geo import GeoBox
@@ -117,6 +117,42 @@ class StaffNotAuthorized(Exception):
 
 class StaffTransitionNotAllowed(Exception):
     """A transição de status não é permitida a partir do estado atual."""
+
+
+def _interval_hours_sql(end: str, start: str) -> str:
+    """Horas (NUMBER) entre dois TIMESTAMPs no Oracle.
+
+    A subtração direta de TIMESTAMPs devolve INTERVAL DAY TO SECOND, que chega
+    ao Python como timedelta e não vira float.
+    """
+    delta = f"({end} - {start})"
+    return (
+        f"(EXTRACT(DAY FROM {delta}) * 24 + EXTRACT(HOUR FROM {delta})"
+        f" + EXTRACT(MINUTE FROM {delta}) / 60"
+        f" + EXTRACT(SECOND FROM {delta}) / 3600)"
+    )
+
+
+_RESOLUTION_HOURS_SQL = _interval_hours_sql("resolved.created_at", "r.received_at")
+
+
+@overload
+def _utc(value: datetime) -> datetime: ...
+
+
+@overload
+def _utc(value: None) -> None: ...
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """Marca como UTC o TIMESTAMP que o driver Oracle devolve sem fuso.
+
+    Por convenção do projeto, as datas gravadas no Oracle estão em UTC; sem o
+    fuso, a API serializaria "2026-11-19T23:29:25" e o app leria hora local.
+    """
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
 
 
 class ReportRepository(Protocol):
@@ -1098,6 +1134,7 @@ class InMemoryReportRepository:
             agency_id=route.agency_id if route else None,
             agency_name=route.agency_name if route else None,
             confirmation_count=len(self._confirmations.get(report_id, set())),
+            address=report_input.address,
         )
 
     def _staff_scope(
@@ -1145,6 +1182,7 @@ class InMemoryReportRepository:
                     not needle
                     or needle in item.protocol.lower()
                     or needle in (item.description or "").lower()
+                    or needle in (item.address or "").lower()
                 )
             ]
             items.sort(key=lambda item: (item.received_at, str(item.id)), reverse=True)
@@ -1358,6 +1396,7 @@ class InMemoryReportRepository:
                             else None
                         ),
                         "received_at": detail.summary.received_at.isoformat(),
+                        "address": detail.summary.address,
                         "status": detail.summary.status.value,
                         "anonymous": detail.anonymous,
                         "comments": comments,
@@ -1388,17 +1427,9 @@ class InMemoryReportRepository:
                     self._confirmations[report_id].discard(user_id)
                     report_input = self._report_inputs[report_id]
                     if report_input.anonymous:
-                        self._report_inputs[report_id] = NewReport(
-                            id=report_input.id,
-                            description=report_input.description,
-                            has_photo=report_input.has_photo,
-                            category=report_input.category,
-                            latitude=report_input.latitude,
-                            longitude=report_input.longitude,
-                            location_accuracy_m=report_input.location_accuracy_m,
-                            anonymous=True,
-                            client_created_at=report_input.client_created_at,
-                            correlation_id=report_input.correlation_id,
+                        # Desvincula o autor; o conteúdo (endereço incluído) fica.
+                        self._report_inputs[report_id] = replace(
+                            report_input,
                             user_id=None,
                             requester_user_id=0,
                         )
@@ -1568,6 +1599,8 @@ class InMemoryReportRepository:
                 if report.id in self._classifications
                 else None
             ),
+            address=report.address,
+            description=report.description,
         )
 
     def record_classification(
@@ -2321,7 +2354,8 @@ class OracleReportRepository:
                    ) AS deadline,
                    rt.agency_id,
                    rt.agency_name,
-                   g.confirmation_count
+                   g.confirmation_count,
+                   r.address
             FROM reports r
             JOIN report_groups g ON g.id = r.group_id
             LEFT JOIN latest_status ls
@@ -2366,7 +2400,8 @@ class OracleReportRepository:
                 if query and query.strip():
                     filters += (
                         " AND (INSTR(LOWER(protocol), :q) > 0"
-                        " OR INSTR(LOWER(description), :q) > 0)"
+                        " OR INSTR(LOWER(description), :q) > 0"
+                        " OR INSTR(LOWER(address), :q) > 0)"
                     )
                     parameters["q"] = query.strip().lower()
                 if cursor_id is not None:
@@ -2395,7 +2430,7 @@ class OracleReportRepository:
                     SELECT id, protocol, status, category, urgency,
                            immediate_risk, description, lat, lon, received_at,
                            deadline, agency_id, agency_name,
-                           confirmation_count
+                           confirmation_count, address
                     FROM (
                         SELECT * FROM base
                         WHERE 1 = 1 {filters}
@@ -2423,17 +2458,14 @@ class OracleReportRepository:
                             description=row[6],
                             latitude=float(row[7]),
                             longitude=float(row[8]),
-                            received_at=row[9],
+                            received_at=_utc(row[9]),
                             # SYS_EXTRACT_UTC devolve o prazo em UTC sem fuso.
-                            deadline=(
-                                row[10].replace(tzinfo=timezone.utc)
-                                if row[10] is not None
-                                else None
-                            ),
+                            deadline=_utc(row[10]),
                             overdue=is_overdue(row_status, row[10], now),
                             agency_id=row[11],
                             agency_name=row[12],
                             confirmation_count=int(row[13]),
+                            address=row[14],
                         )
                     )
                 return items
@@ -2574,7 +2606,7 @@ class OracleReportRepository:
                         category=ReportCategory(row[2]) if row[2] else None,
                         latitude=float(row[3]),
                         longitude=float(row[4]),
-                        received_at=row[5],
+                        received_at=_utc(row[5]),
                         group_id=str(row[6]),
                         confirmation_count=int(row[7]),
                     )
@@ -2590,7 +2622,7 @@ class OracleReportRepository:
                 cursor.execute(
                     """
                     SELECT id, protocol, description, category, lat, lon,
-                           received_at, triage_state
+                           received_at, triage_state, address
                     FROM reports
                     WHERE user_id = :user_id
                        OR EXISTS (
@@ -2609,8 +2641,9 @@ class OracleReportRepository:
                         "category": row[3],
                         "latitude": float(row[4]),
                         "longitude": float(row[5]),
-                        "received_at": row[6].isoformat(),
+                        "received_at": _utc(row[6]).isoformat(),
                         "triage_state": row[7],
+                        "address": row[8],
                     }
                     for row in cursor.fetchall()
                 ]
@@ -2639,7 +2672,7 @@ class OracleReportRepository:
                         "id": int(row[0]),
                         "report_id": row[1],
                         "content": row[2],
-                        "created_at": row[3].isoformat(),
+                        "created_at": _utc(row[3]).isoformat(),
                     }
                     for row in cursor.fetchall()
                 ]
@@ -2736,7 +2769,7 @@ class OracleReportRepository:
                     SELECT
                         COUNT(*) AS reports,
                         AVG(CASE WHEN resolved.type = 'resolvido'
-                            THEN (resolved.created_at - r.received_at) * 24
+                            THEN {_RESOLUTION_HOURS_SQL}
                             ELSE NULL END),
                         AVG(CASE WHEN resolved.type = 'resolvido' THEN 1 ELSE 0 END),
                         COUNT(DISTINCT CASE
@@ -2773,7 +2806,7 @@ class OracleReportRepository:
                                a.agency_id,
                                a.name agency_name,
                                CASE WHEN resolved.type = 'resolvido'
-                                    THEN (resolved.created_at - r.received_at) * 24
+                                    THEN {_RESOLUTION_HOURS_SQL}
                                     END resolved_hours,
                                CASE WHEN resolved.type = 'resolvido' THEN 1 ELSE 0 END resolved_flag
                         FROM reports r
@@ -2855,6 +2888,7 @@ class OracleReportRepository:
                             str(report.correlation_id),
                             None,
                             int(report.has_photo),
+                            report.address,
                             protocol,
                             created,
                         ],
@@ -2884,7 +2918,7 @@ class OracleReportRepository:
                 return PersistedReport(
                     id=report.id,
                     protocol=protocol.getvalue(),
-                    received_at=row[0],
+                    received_at=_utc(row[0]),
                     was_created=bool(created.getvalue()),
                 )
             finally:
@@ -2945,7 +2979,8 @@ class OracleReportRepository:
                            r.triage_state,
                            r.group_id,
                            report_groups.confirmation_count,
-                           report_groups.canonical_report_id
+                           report_groups.canonical_report_id,
+                           r.address
                     FROM reports r
                     JOIN report_groups ON report_groups.id = r.group_id
                     LEFT JOIN latest_status
@@ -2975,7 +3010,7 @@ class OracleReportRepository:
                         type=event[1],
                         actor=event[2],
                         justification=event[3],
-                        created_at=event[4],
+                        created_at=_utc(event[4]),
                     )
                     for event in cursor.fetchall()
                 ]
@@ -3052,9 +3087,10 @@ class OracleReportRepository:
                         ),
                         latitude=float(row[5]),
                         longitude=float(row[6]),
-                        received_at=row[7],
+                        received_at=_utc(row[7]),
                         group_id=str(row[11]),
                         confirmation_count=int(row[12]),
+                        address=row[14],
                     ),
                     description=row[4],
                     anonymous=row[8] is None,
@@ -3063,7 +3099,7 @@ class OracleReportRepository:
                     classification=classification,
                     agency_id=agency_id,
                     agency_name=agency_name,
-                    deadline=deadline,
+                    deadline=_utc(deadline),
                     timeline=timeline,
                 )
             finally:
@@ -3426,7 +3462,7 @@ class OracleReportRepository:
                         category=ReportCategory(row[3]) if row[3] else None,
                         latitude=float(row[4]),
                         longitude=float(row[5]),
-                        received_at=row[6],
+                        received_at=_utc(row[6]),
                         group_id=str(row[7]),
                         confirmation_count=int(row[8]),
                         subcategory=row[9],
@@ -3529,7 +3565,25 @@ class OracleReportRepository:
                                r.lon,
                                r.received_at,
                                r.group_id,
-                               report_groups.confirmation_count
+                               report_groups.confirmation_count,
+                               r.description,
+                               (
+                                   SELECT JSON_VALUE(
+                                       classification_event.payload,
+                                       '$.subcategory'
+                                       RETURNING VARCHAR2(64) NULL ON ERROR
+                                   )
+                                   FROM report_events classification_event
+                                   WHERE classification_event.report_id = r.id
+                                     AND classification_event.type IN (
+                                         'classificado',
+                                         'classificacao_confirmada',
+                                         'classificacao_corrigida'
+                                     )
+                                   ORDER BY classification_event.id DESC
+                                   FETCH FIRST 1 ROW ONLY
+                               ) AS subcategory,
+                               r.address
                         FROM reports r
                         JOIN notification_links
                             ON notification_links.report_id = r.id
@@ -3541,10 +3595,12 @@ class OracleReportRepository:
                         WHERE notification_links.user_id = :user_id
                     )
                     SELECT id, protocol, status, category, lat, lon,
-                           received_at, group_id, confirmation_count
+                           received_at, group_id, confirmation_count,
+                           description, subcategory, address
                     FROM (
                         SELECT id, protocol, status, category, lat, lon,
-                               received_at, group_id, confirmation_count
+                               received_at, group_id, confirmation_count,
+                               description, subcategory, address
                         FROM owned_reports
                         WHERE 1 = 1
                           {status_filter}
@@ -3563,9 +3619,12 @@ class OracleReportRepository:
                         category=ReportCategory(row[3]) if row[3] else None,
                         latitude=float(row[4]),
                         longitude=float(row[5]),
-                        received_at=row[6],
+                        received_at=_utc(row[6]),
                         group_id=str(row[7]),
                         confirmation_count=int(row[8]),
+                        description=row[9],
+                        subcategory=row[10],
+                        address=row[11],
                     )
                     for row in cursor.fetchall()
                 ]
@@ -3612,7 +3671,7 @@ class OracleReportRepository:
                     report_id=report_id,
                     user_id=user_id,
                     content=content,
-                    created_at=row[0],
+                    created_at=_utc(row[0]),
                 )
             finally:
                 cursor.close()
@@ -3650,7 +3709,7 @@ class OracleReportRepository:
                         report_id=UUID(row[1]),
                         user_id=int(row[2]),
                         content=row[3],
-                        created_at=row[4],
+                        created_at=_utc(row[4]),
                     )
                     for row in cursor.fetchall()
                 ]

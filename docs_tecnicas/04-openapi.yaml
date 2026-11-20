@@ -5,6 +5,8 @@ info:
   description: >
     Contrato v1 entre o app Flutter e o backend FastAPI. Fonte da verdade para clientes e testes (RT-19).
     Itens marcados [EXTENSÃO] não constam na tabela de endpoints do documento de Regras Técnicas.
+    Datas/horas (`format: date-time`) devolvidas pela API estão sempre em UTC e com o fuso explícito
+    (ex.: `2026-11-19T23:29:25.789511Z`); o cliente converte para o horário local ao exibir.
 servers:
   - url: http://localhost:8000
     description: Desenvolvimento local (emulador Android usa http://10.0.2.2:8000)
@@ -101,6 +103,8 @@ paths:
       description: >
         Se o `id` já existir para o mesmo usuário, devolve 200 com o reporte existente (RT-03).
         Se `has_photo` for verdadeiro, a resposta traz `upload` com URL assinada para enviar a foto.
+        O `address` opcional é o endereço textual obtido no aparelho (geocodificação reversa do
+        ponto GPS); o reenvio idempotente não altera o endereço já gravado.
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       requestBody:
@@ -132,7 +136,8 @@ paths:
         Rota pública. Devolve uma ocorrência por grupo de duplicados (a mais próxima),
         ordenadas por distância. Reportes em moderação não aparecem. Coordenadas são
         publicadas com 4 casas decimais (~11 m); raio e `distance_m` usam essa
-        coordenada publicada, nunca a posição exata. Cursor inválido devolve 422.
+        coordenada publicada, nunca a posição exata. Sem protocolo, descrição,
+        endereço textual ou foto. Cursor inválido devolve 422.
       parameters:
         - { name: lat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
         - { name: lon, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
@@ -448,7 +453,9 @@ paths:
       summary: Exporta os dados do titular em JSON (RT-51) [EXTENSÃO]
       responses:
         "200":
-          description: Arquivo JSON com dados do usuário e seus reportes
+          description: >
+            Arquivo JSON com dados do usuário e seus reportes (descrição, categoria, coordenadas,
+            endereço textual `address` e datas em UTC com fuso), comentários e dispositivos
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
@@ -506,7 +513,7 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: "#/components/schemas/ReportSummary" }
+                    items: { $ref: "#/components/schemas/MyReportItem" }
                   next_cursor: { type: string, nullable: true }
 
   /v1/public/metrics:
@@ -604,7 +611,7 @@ paths:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/Status" } }
         - { name: category, in: query, schema: { $ref: "#/components/schemas/Category" } }
         - { name: overdue, in: query, schema: { type: boolean, default: false } }
-        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Busca por protocolo ou descrição" }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: "Busca por protocolo, descrição ou endereço (sem diferenciar maiúsculas)" }
         - $ref: "#/components/parameters/Limit"
         - { name: cursor, in: query, schema: { type: string, format: uuid } }
       responses:
@@ -902,6 +909,16 @@ components:
         location_accuracy_m: { type: number, nullable: true }
         anonymous: { type: boolean, default: false }
         client_created_at: { type: string, format: date-time, description: "Data/hora original (RN-11)" }
+        address:
+          type: string
+          maxLength: 200
+          nullable: true
+          example: "Rua Exemplo, 123 – Bairro, Cidade"
+          description: >
+            Endereço textual gerado no aparelho (geocodificação reversa). Opcional: ausente ou null
+            em versões antigas do app ou falha do geocodificador. O servidor remove espaços nas
+            pontas e grava string vazia como null; mais de 200 caracteres (após o corte) devolve 422.
+            Texto não confiável: clientes exibem como texto puro, nunca como HTML.
       description: Exige `description` ou `has_photo=true` (RN-09).
 
     UploadInstruction:
@@ -982,9 +999,20 @@ components:
         subcategory: { type: string, nullable: true }
         lat: { type: number }
         lon: { type: number }
-        received_at: { type: string, format: date-time }
+        received_at: { type: string, format: date-time, example: "2026-11-19T23:29:25.789511Z" }
         group_id: { type: string }
         confirmation_count: { type: integer, minimum: 0 }
+
+    MyReportItem:
+      description: Item de `GET /v1/me/reports`; o app usa `description` como título do card.
+      allOf:
+        - $ref: "#/components/schemas/ReportSummary"
+        - type: object
+          required: [description, subcategory, address]
+          properties:
+            description: { type: string, nullable: true }
+            subcategory: { type: string, nullable: true, description: "Da classificação mais recente (mesmo valor de `classification.subcategory` no detalhe)" }
+            address: { type: string, nullable: true, description: "Endereço textual enviado pelo app; null em reportes antigos" }
 
     ReportDetail:
       allOf:
@@ -992,6 +1020,7 @@ components:
         - type: object
           properties:
             description: { type: string, nullable: true }
+            address: { type: string, nullable: true, description: "Endereço textual enviado pelo app; null em reportes antigos" }
             photo_url: { type: string, format: uri, nullable: true, description: "URL assinada e temporária" }
             anonymous: { type: boolean }
             has_photo: { type: boolean }
@@ -1153,6 +1182,7 @@ components:
         overdue: { type: boolean }
         agency: { allOf: [{ $ref: "#/components/schemas/AgencyRef" }], nullable: true }
         confirmation_count: { type: integer }
+        address: { type: string, nullable: true, description: "Endereço textual enviado pelo app; null em reportes antigos" }
 
     PublicMetrics:
       type: object

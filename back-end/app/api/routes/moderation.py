@@ -43,6 +43,7 @@ def detail_response(
         group_id=detail.summary.group_id,
         confirmation_count=detail.summary.confirmation_count,
         description=detail.description,
+        address=detail.summary.address,
         photo_url=photo_url,
         anonymous=detail.anonymous,
         has_photo=detail.has_photo,

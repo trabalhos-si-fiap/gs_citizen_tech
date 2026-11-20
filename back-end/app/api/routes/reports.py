@@ -121,6 +121,7 @@ def create_report(
         correlation_id=UUID(request.state.correlation_id),
         user_id=None if payload.anonymous else user_id,
         requester_user_id=user_id,
+        address=payload.address,
     )
 
     try:
@@ -372,6 +373,7 @@ def _to_detail_response(
         group_id=summary.group_id,
         confirmation_count=summary.confirmation_count,
         description=detail.description,
+        address=summary.address,
         photo_url=photo_url,
         anonymous=detail.anonymous,
         has_photo=detail.has_photo,

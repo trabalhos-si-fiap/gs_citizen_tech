@@ -51,6 +51,7 @@ CREATE TABLE reports (
     territory_id VARCHAR2(64) DEFAULT 'municipio_demo' NOT NULL,
     category VARCHAR2(32),
     description VARCHAR2(1000),
+    address VARCHAR2(200 CHAR),
     lat NUMBER(9, 6) NOT NULL,
     lon NUMBER(10, 6) NOT NULL,
     geohash VARCHAR2(9) NOT NULL,
