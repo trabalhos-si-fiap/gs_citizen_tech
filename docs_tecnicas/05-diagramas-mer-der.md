@@ -1,9 +1,12 @@
 # MER e DER — modelo de dados Oracle
 
 **Fonte:** estado consolidado de [`schema.sql`](../back-end/db/schema.sql) após
-as migrações V002–V005. O DDL pronto para importar no Oracle SQL Developer Data
+as migrações V002–V011. O DDL pronto para importar no Oracle SQL Developer Data
 Modeler está em
 [`oracle_data_modeler_ddl.sql`](../back-end/db/oracle_data_modeler_ddl.sql).
+As imagens dos diagramas estão em
+[`docs/banco-de-dados/mer`](../docs/banco-de-dados/mer) e
+[`docs/banco-de-dados/der`](../docs/banco-de-dados/der).
 
 Os diagramas abaixo foram alinhados às tabelas, chaves e relações declaradas
 nesses arquivos. Os nomes de tabelas e colunas permanecem em inglês conforme o
@@ -25,8 +28,11 @@ erDiagram
   USUARIO ||--o{ VINCULO_NOTIFICACAO : acompanha
   USUARIO ||--o{ DISPOSITIVO_NOTIFICACAO : registra
   REPORTE ||--o{ JOB : processa
+  TERRITORIO ||--o{ REPORTE : contem
   TERRITORIO ||--o{ REGRA_RESPONSABILIDADE : delimita
   ORGAO ||--o{ REGRA_RESPONSABILIDADE : designa
+  ORGAO ||--o{ OPERADOR_ORGAO : possui
+  USUARIO ||--o| OPERADOR_ORGAO : atua
   USUARIO ||--o{ TOKEN_REFRESH : autentica
   TOKEN_REFRESH o|--o{ TOKEN_REFRESH : rotaciona
 ```
@@ -55,6 +61,8 @@ erDiagram
   TERRITORIES ||--o{ REPORTS : "territory_id"
   TERRITORIES ||--o{ RESPONSIBILITY_RULES : "territory_id"
   AGENCIES ||--o{ RESPONSIBILITY_RULES : "agency_id"
+  AGENCIES ||--o{ AGENCY_OPERATORS : "agency_id"
+  USERS ||--o| AGENCY_OPERATORS : "user_id"
   USERS ||--o{ REFRESH_TOKENS : "user_id"
   REFRESH_TOKENS o|--o{ REFRESH_TOKENS : "rotated_from"
 
@@ -77,6 +85,7 @@ erDiagram
     VARCHAR2 territory_id FK
     VARCHAR2 category
     VARCHAR2 description
+    VARCHAR2 address
     NUMBER lat
     NUMBER lon
     VARCHAR2 geohash
@@ -89,7 +98,7 @@ erDiagram
   }
   REPORT_GROUPS {
     NUMBER id PK
-    VARCHAR2 canonical_report_id FK_UK
+    VARCHAR2 canonical_report_id FK, UK
     NUMBER member_count
     NUMBER confirmation_count
   }
@@ -111,13 +120,13 @@ erDiagram
     TIMESTAMP created_at
   }
   CONFIRMATIONS {
-    NUMBER target_id PK_FK
-    NUMBER user_id PK_FK
+    NUMBER target_id PK, FK
+    NUMBER user_id PK, FK
     TIMESTAMP created_at
   }
   NOTIFICATION_LINKS {
-    VARCHAR2 report_id PK_FK
-    NUMBER user_id PK_FK
+    VARCHAR2 report_id PK, FK
+    NUMBER user_id PK, FK
     VARCHAR2 push_token
   }
   NOTIFICATION_DEVICES {
@@ -149,6 +158,11 @@ erDiagram
     VARCHAR2 name
     VARCHAR2 contact_email
     NUMBER active
+  }
+  AGENCY_OPERATORS {
+    NUMBER user_id PK, FK
+    VARCHAR2 agency_id FK
+    TIMESTAMP created_at
   }
   RESPONSIBILITY_RULES {
     VARCHAR2 rule_id PK
@@ -210,6 +224,7 @@ permite criar o grupo canônico e o reporte na mesma transação.
 | `territories` | `territory_id` | — |
 | `agencies` | `agency_id` | — |
 | `responsibility_rules` | (`rule_id`, `version`) | FKs para território e órgão |
+| `agency_operators` | `user_id` | FKs para usuário (servidor de perfil órgão) e órgão |
 | `otp_challenges` | `email` | Não há FK declarada para `users` |
 | `refresh_tokens` | `token_hash` | FK para usuário e autorreferência opcional em `rotated_from` |
 | `audit_log` | `id` | `actor_user_id` não tem FK declarada |
@@ -220,8 +235,16 @@ permite criar o grupo canônico e o reporte na mesma transação.
 - V003 cria `notification_devices`.
 - V004 cria `audit_log`.
 - V005 permite anonimizar o autor de comentários (`user_id` nulo) e troca o
-  gatilho de imutabilidade de `reports` por um que permite somente a operação de
-  anonimização definida na migration.
+  gatilho de imutabilidade de `reports` por `trg_reports_privacy_updates`.
+- V006 cria o índice de área (`lat`, `lon`, `received_at`) em `reports`.
+- V007 faz `trg_reports_privacy_updates` proteger o conteúdo enviado pelo
+  cidadão e liberar só campos operacionais (triagem, grupo, foto e
+  anonimização).
+- V008 cria `agency_operators`.
+- V009 adiciona os eventos de moderação (`moderacao_aprovada`,
+  `moderacao_rejeitada`).
+- V010 recalcula `reports.triage_state` a partir dos eventos.
+- V011 adiciona `reports.address`.
 - Packages PL/SQL, triggers, índices, scheduler e dados de seed não são
   entidades do MER. Permanecem no DDL e scripts de operação correspondentes.
 - O DDL do Data Modeler representa as tabelas consolidadas após as migrations;
