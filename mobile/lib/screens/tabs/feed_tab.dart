@@ -184,24 +184,17 @@ class _FeedTabState extends State<FeedTab> {
     final isSelected = _activeFilter == label;
     return FilterChip(
       selected: isSelected,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != Icons.all_inclusive) ...[
-            Icon(
+      avatar: icon == Icons.all_inclusive
+          ? null
+          : Icon(
               icon,
               size: 14,
               color: isSelected
                   ? ReclameJaColors.textDark
                   : (color ?? ReclameJaColors.textMuted),
             ),
-            const SizedBox(width: 4),
-          ],
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
+      label: Text(label),
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       backgroundColor: ReclameJaColors.surfaceBright,
       selectedColor: ReclameJaColors.primaryYellow,
       showCheckmark: false,

@@ -42,7 +42,9 @@ class NearbyApiTests(unittest.IsolatedAsyncioTestCase):
         self.smtp_patcher.stop()
         settings.jwt_secret = self.previous_jwt_secret
 
-    async def create_report(self, lat: float, lon: float) -> str:
+    async def create_report(
+        self, lat: float, lon: float, address: str | None = None
+    ) -> str:
         report_id = str(uuid4())
         response = await self.client.post(
             "/v1/reports",
@@ -53,6 +55,7 @@ class NearbyApiTests(unittest.IsolatedAsyncioTestCase):
                 "lat": lat,
                 "lon": lon,
                 "client_created_at": datetime.now(timezone.utc).isoformat(),
+                "address": address,
             },
             headers={"Authorization": f"Bearer {create_access_token(51)}"},
         )
@@ -79,6 +82,16 @@ class NearbyApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("protocol", item)
         self.assertAlmostEqual(item["distance_m"], 111, delta=2)
         self.assertIsNone(body["next_cursor"])
+
+    async def test_address_is_not_exposed_on_the_public_map(self) -> None:
+        await self.create_report(
+            self.lat + 0.001, self.lon, address="Rua Exemplo, 123 – Bairro, Cidade"
+        )
+
+        item = (await self.nearby()).json()["items"][0]
+
+        self.assertNotIn("address", item)
+        self.assertLessEqual(set(item), PUBLIC_FIELDS)
 
     async def test_returns_classified_subcategory(self) -> None:
         report_id = await self.create_report(self.lat + 0.001, self.lon)

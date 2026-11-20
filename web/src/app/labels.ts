@@ -73,6 +73,15 @@ export function deadlineLabel(deadline: string | null | undefined, now = Date.no
   return `atrasado ${Math.round(-hours / 24)} dias`;
 }
 
+export function coordinatesLabel(lat: number, lon: number, digits = 4): string {
+  return `${lat.toFixed(digits)}, ${lon.toFixed(digits)}`;
+}
+
+/** Endereço enviado pelo app; sem ele (reportes antigos), as coordenadas. */
+export function locationLabel(report: { address?: string | null; lat: number; lon: number }, digits = 4): string {
+  return report.address?.trim() || coordinatesLabel(report.lat, report.lon, digits);
+}
+
 /** Valor de `<input type="datetime-local">` (hora local, sem fuso). */
 export function toDateTimeLocal(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');

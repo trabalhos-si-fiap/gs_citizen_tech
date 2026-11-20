@@ -246,6 +246,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     await SessionStore.saveAccountEmail(
                       (user['email'] as String),
                     );
+                    final name = SessionStore.displayNameFromEmail(
+                        user['email'] as String);
+                    await SessionStore.saveDisplayName(name);
                     if (!mounted) return;
                     try {
                       await PushService.initializeAfterLogin();
@@ -259,7 +262,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       );
                     }
                     if (!mounted) return;
-                    final name = (user['email'] as String).split('@').first;
                     parentMessenger.showSnackBar(
                       SnackBar(
                         content: Row(

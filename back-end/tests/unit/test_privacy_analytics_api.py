@@ -5,6 +5,7 @@ import json
 import time
 import unittest
 from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
@@ -102,6 +103,46 @@ class PrivacyAnalyticsApiTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.delete("/v1/me", headers=self.headers)
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json()["status"], "deletion_started")
+
+    async def create_report_with_address(self, *, anonymous: bool = False) -> str:
+        report_id = str(uuid4())
+        response = await self.client.post(
+            "/v1/reports",
+            json={
+                "id": report_id,
+                "description": "Buraco na via",
+                "lat": -23.573806,
+                "lon": -46.623157,
+                "anonymous": anonymous,
+                "client_created_at": datetime.now(timezone.utc).isoformat(),
+                "address": "Rua Exemplo, 123 – Bairro, Cidade",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return report_id
+
+    async def test_export_includes_report_address(self) -> None:
+        # Endereço é dado pessoal do cidadão: entra no direito de acesso (LGPD).
+        report_id = await self.create_report_with_address()
+
+        response = await self.client.get("/v1/me/export", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        exported = {item["id"]: item for item in response.json()["reports"]}
+        self.assertEqual(
+            exported[report_id]["address"], "Rua Exemplo, 123 – Bairro, Cidade"
+        )
+
+    async def test_account_deletion_keeps_address_of_anonymous_report(self) -> None:
+        # Como no Oracle: a exclusão desvincula o autor, o conteúdo fica.
+        report_id = await self.create_report_with_address(anonymous=True)
+
+        deleted = await self.client.delete("/v1/me", headers=self.headers)
+
+        self.assertEqual(deleted.status_code, 202)
+        detail = app.state.report_service.get_detail(UUID(report_id))
+        self.assertEqual(detail.summary.address, "Rua Exemplo, 123 – Bairro, Cidade")
 
     async def test_public_metrics_support_json_csv_and_period_validation(self) -> None:
         response = await self.client.get("/v1/public/metrics")

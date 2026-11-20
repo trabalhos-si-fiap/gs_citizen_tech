@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../services/report_store.dart';
 import '../services/api_client.dart';
+import '../services/session_store.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final Report report;
@@ -236,6 +237,54 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
+  Future<void> _flagReport() async {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showFriendlyError('A sinalização estará disponível após o envio.');
+      return;
+    }
+    const signInMessage = SnackBar(
+      content: Text('Entre na sua conta para sinalizar reportes.'),
+    );
+    if (SessionStore.accessToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(signInMessage);
+      return;
+    }
+    final flag = await showDialog<({String reason, String note})>(
+      context: context,
+      builder: (context) => const _FlagReportDialog(),
+    );
+    if (flag == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ApiClient().flagReport(
+        reportId: apiId,
+        reason: flag.reason,
+        note: flag.note,
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content:
+              Text('Sinalização enviada. A moderação vai revisar este reporte.'),
+          backgroundColor: ReclameJaColors.secondaryEmerald,
+        ),
+      );
+    } on SignInRequiredException {
+      messenger.showSnackBar(signInMessage);
+    } on ReportAlreadyFlaggedException {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Você já sinalizou este reporte. A moderação vai analisá-lo.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showFriendlyError(
+          'Não foi possível enviar a sinalização agora. Tente novamente.');
+    }
+  }
+
   Future<void> _nudgeReport() async {
     final apiId = _report.apiId;
     if (apiId == null || _report.isOffline) {
@@ -404,7 +453,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                 const SizedBox(width: 6),
                                 Flexible(
                                   child: Text(
-                                    '${_report.category} • ${_report.subcategory}',
+                                    _report.classificationLabel,
                                     style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 11,
@@ -765,14 +814,18 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                                       size: 12,
                                                       color: Color(0xFF9A3412)),
                                                   const SizedBox(width: 4),
-                                                  Text(
-                                                      'Responsável: ${event.actor}',
-                                                      style: const TextStyle(
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          color: Color(
-                                                              0xFF9A3412))),
+                                                  // Nomes de órgão são longos:
+                                                  // quebra linha em vez de vazar.
+                                                  Expanded(
+                                                    child: Text(
+                                                        'Responsável: ${event.actor}',
+                                                        style: const TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            color: Color(
+                                                                0xFF9A3412))),
+                                                  ),
                                                 ],
                                               ),
                                             ],
@@ -1259,13 +1312,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text(
-                                  'Abuso reportado para auditoria da equipe do Voz Cidadã.')),
-                        );
-                      },
+                      onPressed: _flagReport,
                       icon: const Icon(Icons.flag_outlined, size: 14),
                       label: const Text('Relatar inconsistência',
                           style: TextStyle(
@@ -1280,6 +1327,102 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Motivos aceitos por `POST /v1/reports/{id}/flag`, com o rótulo exibido.
+const _flagReasons = {
+  'ofensivo': 'Conteúdo ofensivo',
+  'dados_pessoais': 'Expõe dados pessoais',
+  'falso': 'Informação falsa',
+  'duplicado_abusivo': 'Duplicado/abusivo',
+  'outro': 'Outro',
+};
+
+/// Escolha do motivo (e detalhe opcional) para sinalizar um reporte.
+class _FlagReportDialog extends StatefulWidget {
+  const _FlagReportDialog();
+
+  @override
+  State<_FlagReportDialog> createState() => _FlagReportDialogState();
+}
+
+class _FlagReportDialogState extends State<_FlagReportDialog> {
+  String? _reason;
+  final _noteController = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = _reason;
+    return AlertDialog(
+      title: Text('Relatar inconsistência',
+          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Por que este reporte precisa de revisão da moderação?',
+              style: GoogleFonts.hankenGrotesk(),
+            ),
+            const SizedBox(height: 8),
+            RadioGroup<String>(
+              groupValue: reason,
+              onChanged: (value) => setState(() => _reason = value),
+              child: Column(
+                children: [
+                  for (final MapEntry(key: code, value: label)
+                      in _flagReasons.entries)
+                    RadioListTile<String>(
+                      value: code,
+                      title: Text(label),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _noteController,
+              maxLength: 500,
+              maxLines: 3,
+              minLines: 1,
+              decoration: const InputDecoration(
+                hintText: 'Detalhes (opcional)',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar',
+              style: TextStyle(color: ReclameJaColors.textMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ReclameJaColors.alertRed,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: reason == null
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    (reason: reason, note: _noteController.text.trim()),
+                  ),
+          child: const Text('Enviar sinalização'),
+        ),
+      ],
     );
   }
 }

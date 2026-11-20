@@ -181,13 +181,14 @@ class OracleRepositoryTests(unittest.TestCase):
 
         cursor = database.fake_connection.fake_cursor
         self.assertEqual(cursor.call_name, "PKG_REPORTES.registrar_reporte")
-        self.assertEqual(len(cursor.call_parameters), 14)
+        self.assertEqual(len(cursor.call_parameters), 15)
         self.assertEqual(cursor.call_parameters[0], str(report_id))
         self.assertEqual(cursor.call_parameters[1:3], [23, 23])
         self.assertEqual(cursor.call_parameters[7], encode_geohash(-23.55, -46.63))
+        # push_token, has_photo e address (ausente em versões antigas do app).
         self.assertEqual(
-            cursor.call_parameters[10:12],
-            [None, 0],
+            cursor.call_parameters[10:13],
+            [None, 0, None],
         )
         self.assertEqual(
             cursor.executed_query,
@@ -200,6 +201,34 @@ class OracleRepositoryTests(unittest.TestCase):
         self.assertEqual(result.id, report_id)
         self.assertEqual(result.protocol, "RPT-2026-4KQ7TD")
         self.assertTrue(result.was_created)
+
+    def test_create_sends_address_before_out_parameters(self) -> None:
+        database = FakeDatabase()
+        repository = OracleReportRepository(database)
+        report = NewReport(
+            id=uuid4(),
+            description="Buraco na via",
+            has_photo=False,
+            category=None,
+            latitude=-23.55,
+            longitude=-46.63,
+            location_accuracy_m=None,
+            anonymous=False,
+            client_created_at=datetime(2026, 11, 17, 15, 0, tzinfo=timezone.utc),
+            correlation_id=uuid4(),
+            user_id=23,
+            requester_user_id=23,
+            address="Rua Exemplo, 123 – Bairro, Cidade",
+        )
+
+        repository.create(report)
+
+        cursor = database.fake_connection.fake_cursor
+        # p_address entra depois de p_has_photo; os dois OUT continuam no fim.
+        self.assertEqual(len(cursor.call_parameters), 15)
+        self.assertEqual(
+            cursor.call_parameters[12], "Rua Exemplo, 123 – Bairro, Cidade"
+        )
 
     def test_business_errors_are_rolled_back_and_translated(self) -> None:
         class FakeOracleErrorInfo:
@@ -488,6 +517,228 @@ class OracleAreaQueryTests(unittest.TestCase):
         self.assertEqual(item.group_id, "grupo-9")
         self.assertEqual(item.confirmation_count, 4)
         self.assertEqual(item.subcategory, "buraco_via")
+
+
+# O driver devolve TIMESTAMP sem fuso; por convenção do projeto, em UTC.
+NAIVE_RECEIVED_AT = datetime(2026, 11, 19, 23, 29, 25, 789511)
+UTC_RECEIVED_AT = NAIVE_RECEIVED_AT.replace(tzinfo=timezone.utc)
+ADDRESS = "Rua Exemplo, 123 – Bairro, Cidade"
+
+
+def scripted_cursor(database, *, fetchone=(), fetchall=()):
+    """Respostas em ordem para cada fetchone/fetchall; guarda as consultas."""
+    cursor = database.fake_connection.fake_cursor
+    one, many, queries = iter(fetchone), iter(fetchall), []
+    original_execute = cursor.execute
+
+    def execute(query, **parameters):
+        queries.append(" ".join(query.split()))
+        original_execute(query, **parameters)
+
+    cursor.execute = execute
+    cursor.fetchone = lambda: next(one)
+    cursor.fetchall = lambda: next(many)
+    return cursor, queries
+
+
+class OracleReportViewsTests(unittest.TestCase):
+    """Endereço, descrição, subcategoria e datas em UTC nas visões do reporte."""
+
+    report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+
+    def test_user_reports_carry_description_subcategory_address_and_utc(self) -> None:
+        database = FakeDatabase()
+        _, queries = scripted_cursor(
+            database,
+            fetchall=[[(
+                self.report_id, "RPT-2026-4KQ7TD", "encaminhado", "risco_urbano",
+                -23.573806, -46.623157, NAIVE_RECEIVED_AT, "12", 2,
+                "Vazamento de esgoto na rua.", "esgoto_vazamento", ADDRESS,
+            )]],
+        )
+
+        [item] = OracleReportRepository(database).list_user_reports(
+            23, limit=20, cursor_id=None, status=None
+        )
+
+        self.assertIn("r.address", queries[-1])
+        self.assertIn("'$.subcategory'", queries[-1])
+        self.assertEqual(item.description, "Vazamento de esgoto na rua.")
+        self.assertEqual(item.subcategory, "esgoto_vazamento")
+        self.assertEqual(item.address, ADDRESS)
+        self.assertEqual(item.received_at, UTC_RECEIVED_AT)
+        self.assertIs(item.received_at.tzinfo, timezone.utc)
+
+    def test_detail_carries_address_and_utc_datetimes(self) -> None:
+        database = FakeDatabase()
+        naive_event_at = datetime(2026, 11, 19, 23, 30)
+        naive_deadline = datetime(2026, 11, 22, 23, 30)
+        _, queries = scripted_cursor(
+            database,
+            fetchone=[(
+                self.report_id, "RPT-2026-4KQ7TD", "encaminhado", "risco_urbano",
+                "Vazamento", -23.573806, -46.623157, NAIVE_RECEIVED_AT, 23, 0,
+                "confirmed", "12", 2, self.report_id, ADDRESS,
+            )],
+            fetchall=[
+                [(1, "recebido", "system", None, naive_event_at)],
+                [(
+                    "encaminhado",
+                    '{"agency_id": "saneamento-demo", "agency_name": "Saneamento"}',
+                    naive_deadline,
+                    "system",
+                )],
+            ],
+        )
+
+        detail = OracleReportRepository(database).get_detail(UUID(self.report_id))
+
+        self.assertIn("r.address", queries[0])
+        self.assertEqual(detail.summary.address, ADDRESS)
+        self.assertEqual(detail.summary.received_at, UTC_RECEIVED_AT)
+        self.assertIs(detail.summary.received_at.tzinfo, timezone.utc)
+        self.assertIs(detail.timeline[0].created_at.tzinfo, timezone.utc)
+        self.assertEqual(
+            detail.deadline, naive_deadline.replace(tzinfo=timezone.utc)
+        )
+
+    def test_staff_list_carries_address_and_utc_received_at(self) -> None:
+        database = FakeDatabase()
+        _, queries = scripted_cursor(
+            database,
+            fetchall=[[(
+                self.report_id, "RPT-2026-4KQ7TD", "encaminhado", "risco_urbano",
+                "alta", "false", "Vazamento", -23.573806, -46.623157,
+                NAIVE_RECEIVED_AT, None, "saneamento-demo", "Saneamento", 2,
+                ADDRESS,
+            )]],
+        )
+
+        [item] = OracleReportRepository(database).list_staff_reports(
+            None, None, None, False, None, 20, None
+        )
+
+        self.assertIn("r.address", queries[-1])
+        self.assertEqual(item.address, ADDRESS)
+        self.assertEqual(item.received_at, UTC_RECEIVED_AT)
+        self.assertIs(item.received_at.tzinfo, timezone.utc)
+
+
+class OracleStaffSearchTests(unittest.TestCase):
+    def test_search_matches_protocol_description_or_address_ignoring_case(self) -> None:
+        database = FakeDatabase()
+        cursor, queries = scripted_cursor(database, fetchall=[[]])
+
+        OracleReportRepository(database).list_staff_reports(
+            None, None, None, False, "  Rua Exemplo ", 20, None
+        )
+
+        self.assertIn(
+            "AND (INSTR(LOWER(protocol), :q) > 0"
+            " OR INSTR(LOWER(description), :q) > 0"
+            " OR INSTR(LOWER(address), :q) > 0)",
+            queries[-1],
+        )
+        self.assertEqual(cursor.query_parameters["q"], "rua exemplo")
+
+
+class OracleUtcTimestampTests(unittest.TestCase):
+    """Demais datas de reporte que a API devolve saem do Oracle com fuso UTC."""
+
+    report_id = "8d11c206-f849-4631-9c0f-d27a23fc7634"
+
+    def test_created_report_received_at_is_utc(self) -> None:
+        database = FakeDatabase()
+        scripted_cursor(database, fetchone=[(NAIVE_RECEIVED_AT,)])
+        report = NewReport(
+            id=uuid4(),
+            description="Buraco na via",
+            has_photo=False,
+            category=None,
+            latitude=-23.55,
+            longitude=-46.63,
+            location_accuracy_m=None,
+            anonymous=False,
+            client_created_at=datetime(2026, 11, 17, 15, 0, tzinfo=timezone.utc),
+            correlation_id=uuid4(),
+            user_id=23,
+            requester_user_id=23,
+        )
+
+        persisted = OracleReportRepository(database).create(report)
+
+        self.assertEqual(persisted.received_at, UTC_RECEIVED_AT)
+
+    def test_moderation_queue_received_at_is_utc(self) -> None:
+        database = FakeDatabase()
+        scripted_cursor(database, fetchall=[[(
+            self.report_id, "RPT-2026-4KQ7TD", "risco_urbano", -23.57, -46.62,
+            NAIVE_RECEIVED_AT, "12", 0, "recebido",
+        )]])
+
+        [item] = OracleReportRepository(database).list_moderation(limit=10)
+
+        self.assertEqual(item.received_at, UTC_RECEIVED_AT)
+
+    def test_public_map_received_at_is_utc(self) -> None:
+        database = FakeDatabase()
+        scripted_cursor(database, fetchall=[[(
+            self.report_id, "RPT-2026-4KQ7TD", "recebido", "risco_urbano",
+            -23.57, -46.62, NAIVE_RECEIVED_AT, "12", 0, None,
+        )]])
+        box = GeoBox(min_lat=-23.6, max_lat=-23.5, min_lon=-46.7, max_lon=-46.6)
+
+        [item] = OracleReportRepository(database).list_in_area(box, max_items=10)
+
+        self.assertEqual(item.received_at, UTC_RECEIVED_AT)
+
+    def test_comment_created_at_is_utc(self) -> None:
+        database = FakeDatabase()
+        scripted_cursor(
+            database,
+            fetchone=[(NAIVE_RECEIVED_AT,), (1,)],
+            fetchall=[[(37, self.report_id, 24, "Vi hoje.", NAIVE_RECEIVED_AT)]],
+        )
+        repository = OracleReportRepository(database)
+
+        created = repository.create_comment(UUID(self.report_id), 24, "Vi hoje.")
+        [listed] = repository.list_comments(UUID(self.report_id), limit=50)
+
+        self.assertEqual(created.created_at, UTC_RECEIVED_AT)
+        self.assertEqual(listed.created_at, UTC_RECEIVED_AT)
+
+    def test_export_writes_report_and_comment_dates_with_utc_offset(self) -> None:
+        database = FakeDatabase()
+        scripted_cursor(database, fetchall=[
+            [(
+                self.report_id, "RPT-2026-4KQ7TD", "Buraco", "risco_urbano",
+                -23.57, -46.62, NAIVE_RECEIVED_AT, "confirmed", None,
+            )],
+            [],
+            [(37, self.report_id, "Vi hoje.", NAIVE_RECEIVED_AT)],
+        ])
+
+        exported = OracleReportRepository(database).export_user_data(23)
+
+        expected = UTC_RECEIVED_AT.isoformat()
+        self.assertEqual(exported["reports"][0]["received_at"], expected)
+        self.assertEqual(exported["comments"][0]["created_at"], expected)
+
+    def test_export_includes_report_address(self) -> None:
+        database = FakeDatabase()
+        _, queries = scripted_cursor(database, fetchall=[
+            [(
+                self.report_id, "RPT-2026-4KQ7TD", "Buraco", "risco_urbano",
+                -23.57, -46.62, NAIVE_RECEIVED_AT, "confirmed", ADDRESS,
+            )],
+            [],
+            [],
+        ])
+
+        exported = OracleReportRepository(database).export_user_data(23)
+
+        self.assertIn("received_at, triage_state, address", queries[0])
+        self.assertEqual(exported["reports"][0]["address"], ADDRESS)
 
 
 class OracleModerationQueueTests(unittest.TestCase):

@@ -9,6 +9,9 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'outbox_store.dart';
 import 'session_store.dart';
 
+/// Tamanho máximo de `address` aceito por `POST /v1/reports`.
+const maxAddressLength = 200;
+
 class ApiConfig {
   static String baseUrl = const String.fromEnvironment(
     'API_BASE_URL',
@@ -23,6 +26,16 @@ class OutboxSyncResult {
   final Object? error;
 
   bool get hasPendingFailure => error != null;
+}
+
+/// O munícipe já sinalizou esse reporte antes (409 em `/flag`).
+class ReportAlreadyFlaggedException implements Exception {
+  const ReportAlreadyFlaggedException();
+}
+
+/// A ação exige login e a API recusou a sessão (401), mesmo após renovar.
+class SignInRequiredException implements Exception {
+  const SignInRequiredException();
 }
 
 class ApiClient {
@@ -130,7 +143,9 @@ class ApiClient {
     String? category,
     bool hasPhoto = false,
     String? clientCreatedAt,
+    String? address,
   }) async {
+    final trimmedAddress = address?.trim() ?? '';
     final response = await _authorized(
       (headers) => http.post(
         Uri.parse('${ApiConfig.baseUrl}/v1/reports'),
@@ -139,12 +154,17 @@ class ApiClient {
           'id': id,
           'description': description,
           'has_photo': hasPhoto,
-          'category': category,
+          // Sem categoria escolhida, a IA classifica sem palpite do app.
+          if (category != null) 'category': category,
           'lat': lat,
           'lon': lon,
           if (locationAccuracyM != null)
             'location_accuracy_m': locationAccuracyM,
           'anonymous': anonymous,
+          if (trimmedAddress.isNotEmpty)
+            'address': trimmedAddress.length > maxAddressLength
+                ? trimmedAddress.substring(0, maxAddressLength)
+                : trimmedAddress,
           'client_created_at':
               clientCreatedAt ?? DateTime.now().toUtc().toIso8601String(),
         }),
@@ -173,6 +193,7 @@ class ApiClient {
           category: item['category'] as String?,
           hasPhoto: hasPhoto,
           clientCreatedAt: item['client_created_at'] as String,
+          address: item['address'] as String?,
         );
         if (hasPhoto) {
           final photoPath = item['photo_path'] as String?;
@@ -330,6 +351,32 @@ class ApiClient {
       throw Exception(_errorMessage(response));
     }
     return jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// Sinaliza o reporte para a moderação. [reason]: ofensivo, dados_pessoais,
+  /// falso, duplicado_abusivo ou outro.
+  Future<void> flagReport({
+    required String reportId,
+    required String reason,
+    String? note,
+  }) async {
+    final response = await _authorized(
+      (headers) => http.post(
+        Uri.parse('${ApiConfig.baseUrl}/v1/reports/$reportId/flag'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'reason': reason,
+          if (note != null && note.isNotEmpty) 'note': note,
+        }),
+      ),
+    );
+    if (response.statusCode == 401) throw const SignInRequiredException();
+    if (response.statusCode == 409) {
+      throw const ReportAlreadyFlaggedException();
+    }
+    if (response.statusCode != 202) {
+      throw Exception(_errorMessage(response));
+    }
   }
 
   Future<Map<String, dynamic>> reopenReport({

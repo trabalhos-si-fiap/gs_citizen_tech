@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../app_theme.dart';
 import '../services/report_store.dart';
 import '../services/api_client.dart';
+import '../services/category_labels.dart';
 import 'report_detail_screen.dart';
 
 class PostSendConfirmationScreen extends StatefulWidget {
@@ -19,7 +21,24 @@ class PostSendConfirmationScreen extends StatefulWidget {
 
 class _PostSendConfirmationScreenState
     extends State<PostSendConfirmationScreen> {
+  /// Intervalo entre consultas enquanto a IA classifica.
+  static const pollInterval = Duration(seconds: 3);
+
+  late Report _report = widget.report;
   bool _isConfirmedByMunicipe = false;
+  Timer? _pollTimer;
+
+  /// Enviado e ainda sem classificação: consulta a API até a IA responder.
+  bool get _isAnalysing =>
+      _report.apiId != null &&
+      !_report.isOffline &&
+      (_report.triageState.isEmpty ||
+          _report.triageState == 'pending_classification');
+
+  bool get _isClassificationConfirmed =>
+      _isConfirmedByMunicipe ||
+      _report.triageState == 'confirmed' ||
+      _report.triageState == 'auto_confirmed';
 
   ImageProvider? _resolveImageProvider(String? pathOrUrl) {
     if (pathOrUrl == null || pathOrUrl.isEmpty) return null;
@@ -29,18 +48,50 @@ class _PostSendConfirmationScreenState
     return FileImage(File(pathOrUrl));
   }
 
+  @override
+  void initState() {
+    super.initState();
+    if (_isAnalysing) _refreshClassification();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshClassification() async {
+    try {
+      _showReport(await ApiClient().getReport(_report.apiId!));
+    } catch (_) {
+      // Sem resposta agora: tenta de novo no próximo ciclo.
+    }
+    if (mounted && _isAnalysing) {
+      _pollTimer = Timer(pollInterval, _refreshClassification);
+    }
+  }
+
+  /// Atualiza o store e a tela com o reporte devolvido pela API.
+  void _showReport(Map<String, dynamic> detail) {
+    final updated = ReportStore().upsertFromApi(detail);
+    if (!mounted) return;
+    setState(() {
+      // A foto local continua na tela enquanto a da API não fica pronta.
+      _report = updated.copyWith(imageUrl: updated.imageUrl ?? _report.imageUrl);
+    });
+  }
+
   Future<void> _confirmData() async {
-    final apiId = widget.report.apiId;
-    if (apiId == null || widget.report.isOffline) {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
       _showMessage('A confirmação ficará disponível após o envio do reporte.');
       return;
     }
     try {
-      final detail = await ApiClient().triageReport(
+      _showReport(await ApiClient().triageReport(
         reportId: apiId,
         action: 'confirm',
-      );
-      ReportStore().upsertFromApi(detail);
+      ));
       if (!mounted) return;
       setState(() => _isConfirmedByMunicipe = true);
       _showMessage('Classificação confirmada e encaminhada.', success: true);
@@ -52,72 +103,33 @@ class _PostSendConfirmationScreenState
     }
   }
 
-  void _correctData() {
-    showDialog(
+  Future<void> _correctData() async {
+    final apiId = _report.apiId;
+    if (apiId == null || _report.isOffline) {
+      _showMessage('A correção ficará disponível após o envio.');
+      return;
+    }
+    final choice = await showDialog<({String category, String subcategory})>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Corrigir Dados',
-            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
-        content: Text(
-          'Modo de edição: você gostaria de alterar a classificação recomendada para outra categoria da matriz?',
-          style: GoogleFonts.hankenGrotesk(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar',
-                style: TextStyle(color: ReclameJaColors.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ReclameJaColors.primaryYellow,
-              foregroundColor: ReclameJaColors.textDark,
-            ),
-            onPressed: () async {
-              Navigator.pop(context);
-              final apiId = widget.report.apiId;
-              if (apiId == null || widget.report.isOffline) {
-                _showMessage('A correção ficará disponível após o envio.');
-                return;
-              }
-              try {
-                const categoryCodes = {
-                  'Risco Urbano': 'risco_urbano',
-                  'Transporte': 'transporte_publico',
-                  'Saúde': 'saude_atendimento',
-                };
-                const subcategoryCodes = {
-                  'Pavimentação': 'buraco_via',
-                  'Iluminação': 'iluminacao_falha',
-                  'Poda e Árvores': 'arvore_risco',
-                  'Água e Esgoto': 'esgoto_vazamento',
-                  'Ônibus e Paradas': 'onibus_atraso_lotacao',
-                  'Atendimento UBS': 'demora_atendimento',
-                };
-                final result = await ApiClient().triageReport(
-                  reportId: apiId,
-                  action: 'correct',
-                  category: categoryCodes[widget.report.category] ??
-                      widget.report.category,
-                  subcategory: subcategoryCodes[widget.report.subcategory] ??
-                      widget.report.subcategory,
-                );
-                ReportStore().upsertFromApi(result);
-                if (!mounted) return;
-                setState(() => _isConfirmedByMunicipe = true);
-                _showMessage('Classificação atualizada.', success: true);
-              } catch (error) {
-                if (!mounted) return;
-                _showMessage(
-                  'Não foi possível atualizar agora. Tente novamente em instantes.',
-                );
-              }
-            },
-            child: const Text('Alterar categoria'),
-          ),
-        ],
-      ),
+      builder: (context) => const _CorrectClassificationDialog(),
     );
+    if (choice == null || !mounted) return;
+    try {
+      _showReport(await ApiClient().triageReport(
+        reportId: apiId,
+        action: 'correct',
+        category: choice.category,
+        subcategory: choice.subcategory,
+      ));
+      if (!mounted) return;
+      setState(() => _isConfirmedByMunicipe = true);
+      _showMessage('Classificação atualizada.', success: true);
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(
+        'Não foi possível atualizar agora. Tente novamente em instantes.',
+      );
+    }
   }
 
   void _showMessage(String message, {bool success = false}) {
@@ -198,7 +210,7 @@ class _PostSendConfirmationScreenState
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            'Protocolo ${widget.report.id}',
+                            'Protocolo ${_report.id}',
                             style: textTheme.labelSmall?.copyWith(
                               color: const Color(0xFF14532D),
                               fontWeight: FontWeight.bold,
@@ -219,7 +231,11 @@ class _PostSendConfirmationScreenState
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Revise a categoria e confirme o reporte para encaminhamento.',
+                    _report.isOffline
+                        ? 'Seu reporte está salvo no aparelho e será enviado quando a conexão voltar.'
+                        : _isAnalysing
+                            ? 'A IA está classificando o seu relato. Isso costuma levar alguns segundos.'
+                            : 'Revise a categoria e confirme o reporte para encaminhamento.',
                     style: textTheme.bodyMedium
                         ?.copyWith(color: ReclameJaColors.textMuted),
                     textAlign: TextAlign.center,
@@ -253,16 +269,16 @@ class _PostSendConfirmationScreenState
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       color: ReclameJaColors.surfaceLow,
-                      image: _resolveImageProvider(widget.report.imageUrl) != null
+                      image: _resolveImageProvider(_report.imageUrl) != null
                           ? DecorationImage(
-                              image: _resolveImageProvider(widget.report.imageUrl)!,
+                              image: _resolveImageProvider(_report.imageUrl)!,
                               fit: BoxFit.cover,
                             )
                           : null,
                     ),
                     child: Stack(
                       children: [
-                        if (widget.report.imageUrl == null)
+                        if (_report.imageUrl == null)
                           const Center(
                             child: Icon(Icons.photo,
                                 size: 48, color: ReclameJaColors.textMuted),
@@ -279,14 +295,14 @@ class _PostSendConfirmationScreenState
                               border:
                                   Border.all(color: const Color(0xFF86EFAC)),
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
-                                Icon(Icons.verified,
+                                const Icon(Icons.verified,
                                     color: Color(0xFF16A34A), size: 14),
-                                SizedBox(width: 4),
+                                const SizedBox(width: 4),
                                 Text(
-                                  'Análise pendente',
-                                  style: TextStyle(
+                                  _statusBadge,
+                                  style: const TextStyle(
                                       color: Color(0xFF16A34A),
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold),
@@ -316,7 +332,7 @@ class _PostSendConfirmationScreenState
                                   const SizedBox(width: 4),
                                   Flexible(
                                     child: Text(
-                                      widget.report.location,
+                                      _report.location,
                                       style: const TextStyle(
                                           color: Colors.white, fontSize: 11),
                                       maxLines: 1,
@@ -339,7 +355,7 @@ class _PostSendConfirmationScreenState
                       const Icon(Icons.auto_fix_high,
                           size: 16, color: ReclameJaColors.secondaryEmerald),
                       const SizedBox(width: 6),
-                      Text('Categoria informada',
+                      Text('Classificação da IA',
                           style: textTheme.labelSmall
                               ?.copyWith(color: ReclameJaColors.textMuted)),
                     ],
@@ -370,14 +386,38 @@ class _PostSendConfirmationScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                '${widget.report.category} • ${widget.report.subcategory}',
-                                style: textTheme.labelLarge
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
+                              if (_isAnalysing)
+                                Row(
+                                  children: [
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Analisando o seu relato…',
+                                        style: textTheme.labelLarge?.copyWith(
+                                            fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Text(
+                                  _report.isOffline
+                                      ? 'A classificação acontece depois do envio.'
+                                      : _report.classificationLabel,
+                                  style: textTheme.labelLarge
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
                               const SizedBox(height: 2),
                               Text(
-                                'A classificação poderá ser revisada pela equipe responsável.',
+                                _isAnalysing
+                                    ? 'A categoria sugerida aparece aqui em instantes.'
+                                    : 'A classificação poderá ser revisada pela equipe responsável.',
                                 style: textTheme.bodySmall?.copyWith(
                                     color: ReclameJaColors.textMuted),
                               ),
@@ -389,15 +429,17 @@ class _PostSendConfirmationScreenState
                   ),
                   const SizedBox(height: 16),
 
-                  // Severity Indicators
+                  // Urgência estimada pela IA
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Severidade',
+                      Text('Urgência',
                           style: textTheme.labelSmall
                               ?.copyWith(color: ReclameJaColors.textMuted)),
                       Text(
-                        'Não avaliada',
+                        _isAnalysing || _report.isOffline
+                            ? 'Em análise'
+                            : labelForUrgency(_report.urgency),
                         style: textTheme.labelSmall
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
@@ -406,33 +448,21 @@ class _PostSendConfirmationScreenState
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Expanded(
+                      for (var level = 1; level <= 3; level++) ...[
+                        if (level > 1) const SizedBox(width: 6),
+                        Expanded(
                           child: Container(
-                              height: 6,
-                              decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(999),
-                                  color: Colors.amber.shade300))),
-                      const SizedBox(width: 6),
-                      Expanded(
-                          child: Container(
-                              height: 6,
-                              decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(999),
-                                  color: Colors.amber.shade500))),
-                      const SizedBox(width: 6),
-                      Expanded(
-                          child: Container(
-                              height: 6,
-                              decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(999),
-                                  color: ReclameJaColors.surfaceDim))),
+                            height: 6,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              color: level <= _urgencyLevel
+                                  ? Colors.amber.shade500
+                                  : ReclameJaColors.surfaceDim,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Impacto identificado no tráfego local e circulação de pedestres.',
-                    style: textTheme.bodySmall
-                        ?.copyWith(color: ReclameJaColors.textMuted),
                   ),
                   const SizedBox(height: 16),
 
@@ -464,7 +494,9 @@ class _PostSendConfirmationScreenState
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                widget.report.organ,
+                                _report.organ.isNotEmpty
+                                    ? _report.organ
+                                    : 'Definido após a confirmação da classificação.',
                                 style: textTheme.labelLarge?.copyWith(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
@@ -479,17 +511,21 @@ class _PostSendConfirmationScreenState
                   const SizedBox(height: 20),
 
                   // Validation Action Blocks
+                  if (_report.triageState == 'awaiting_user' ||
+                      _isClassificationConfirmed)
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Center(
-                        child: Text(
-                          'As informações correspondem ao problema?',
-                          style: textTheme.bodyMedium,
+                      if (!_isClassificationConfirmed) ...[
+                        Center(
+                          child: Text(
+                            'As informações correspondem ao problema?',
+                            style: textTheme.bodyMedium,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!_isConfirmedByMunicipe)
+                        const SizedBox(height: 12),
+                      ],
+                      if (!_isClassificationConfirmed)
                         Row(
                           children: [
                             Expanded(
@@ -611,15 +647,13 @@ class _PostSendConfirmationScreenState
                   _buildTimelineItem(
                     icon: Icons.assignment_turned_in_outlined,
                     stepTitle: '1. Encaminhamento oficial',
-                    timeLabel: '2h',
                     description:
                         'Inclusão no sistema central de zeladoria e agendamento na base técnica distrital.',
-                    isDone: true,
+                    isDone: _report.organ.isNotEmpty,
                   ),
                   _buildTimelineItem(
                     icon: Icons.engineering_outlined,
                     stepTitle: '2. Vistoria técnica',
-                    timeLabel: '48h úteis',
                     description:
                         'Equipe de campo avalia a extensão do dano e emite a ordem de serviço operacional.',
                     isDone: false,
@@ -627,7 +661,6 @@ class _PostSendConfirmationScreenState
                   _buildTimelineItem(
                     icon: Icons.notifications_active_outlined,
                     stepTitle: '3. Notificações diretas',
-                    timeLabel: 'Tempo real',
                     description:
                         'Receba fotos de vistoria, início das obras e o registro da conclusão do reparo.',
                     isDone: false,
@@ -638,45 +671,7 @@ class _PostSendConfirmationScreenState
             ),
             const SizedBox(height: 16),
 
-            // Engaged Neighbors box
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: ReclameJaColors.surfaceLow,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: ReclameJaColors.surfaceBright,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.share_location,
-                        color: ReclameJaColors.secondaryEmerald, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Vizinhos engajados',
-                            style: textTheme.labelMedium
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 2),
-                        Text(
-                          '3 moradores reforçaram a urgência deste local nas últimas 48h.',
-                          style: textTheme.bodySmall
-                              ?.copyWith(color: ReclameJaColors.textMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
 
             // Footer navigation buttons
             ElevatedButton.icon(
@@ -690,7 +685,7 @@ class _PostSendConfirmationScreenState
               onPressed: () {
                 // Find Report in Store to get latest state and navigate
                 final latestReport = ReportStore().allReports.firstWhere(
-                      (r) => r.id == widget.report.id,
+                      (r) => r.id == _report.id,
                       orElse: () => widget.report,
                     );
                 Navigator.push(
@@ -725,10 +720,26 @@ class _PostSendConfirmationScreenState
     );
   }
 
+  String get _statusBadge {
+    if (_report.isOffline) return 'Aguardando envio';
+    if (_isAnalysing) return 'Analisando…';
+    if (_isClassificationConfirmed) return 'Classificação confirmada';
+    if (_report.triageState == 'in_moderation') return 'Em revisão';
+    return 'Classificado pela IA';
+  }
+
+  int get _urgencyLevel => _isAnalysing
+      ? 0
+      : switch (_report.urgency) {
+          'alta' => 3,
+          'media' => 2,
+          'baixa' => 1,
+          _ => 0,
+        };
+
   Widget _buildTimelineItem({
     required IconData icon,
     required String stepTitle,
-    required String timeLabel,
     required String description,
     required bool isDone,
     bool isLast = false,
@@ -774,26 +785,9 @@ class _PostSendConfirmationScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(stepTitle,
-                          style: GoogleFonts.hankenGrotesk(
-                              fontSize: 14, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: ReclameJaColors.surfaceLow,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(timeLabel,
-                            style: GoogleFonts.hankenGrotesk(
-                                fontSize: 10,
-                                color: ReclameJaColors.textMuted)),
-                      ),
-                    ],
-                  ),
+                  Text(stepTitle,
+                      style: GoogleFonts.hankenGrotesk(
+                          fontSize: 14, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(
                     description,
@@ -808,6 +802,70 @@ class _PostSendConfirmationScreenState
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Escolha da categoria certa quando a sugestão da IA está errada.
+class _CorrectClassificationDialog extends StatefulWidget {
+  const _CorrectClassificationDialog();
+
+  @override
+  State<_CorrectClassificationDialog> createState() =>
+      _CorrectClassificationDialogState();
+}
+
+class _CorrectClassificationDialogState
+    extends State<_CorrectClassificationDialog> {
+  ({String category, String subcategory})? _choice;
+
+  @override
+  Widget build(BuildContext context) {
+    final choice = _choice;
+    return AlertDialog(
+      title: Text('Corrigir classificação',
+          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: RadioGroup<({String category, String subcategory})>(
+          groupValue: choice,
+          onChanged: (value) => setState(() => _choice = value),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final category in reportCategories) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 2),
+                  child: Text(labelForCategory(category),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                for (final subcategory in subcategoriesOf(category))
+                  RadioListTile<({String category, String subcategory})>(
+                    value: (category: category, subcategory: subcategory),
+                    title: Text(labelForSubcategory(subcategory)),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar',
+              style: TextStyle(color: ReclameJaColors.textMuted)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: ReclameJaColors.primaryYellow,
+            foregroundColor: ReclameJaColors.textDark,
+          ),
+          onPressed: choice == null ? null : () => Navigator.pop(context, choice),
+          child: const Text('Alterar categoria'),
+        ),
+      ],
     );
   }
 }

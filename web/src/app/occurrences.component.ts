@@ -10,6 +10,7 @@ import {
   categoryLabel,
   deadlineLabel,
   formatDateTime,
+  locationLabel,
 } from './labels';
 import { StaffApiError, StaffApiService } from './staff-api.service';
 import { ReportCategory, ReportStatus, StaffReportItem, StaffSummary } from './staff.models';
@@ -43,7 +44,7 @@ const PAGE_SIZE = 25;
         <div class="filter-top">
           <form class="search-box" (ngSubmit)="reload()">
             <span class="material-symbols-outlined">search</span>
-            <input type="search" name="search" [(ngModel)]="search" placeholder="Buscar protocolo ou descrição e tecle Enter" aria-label="Buscar ocorrências" />
+            <input type="search" name="search" [(ngModel)]="search" placeholder="Buscar protocolo, descrição ou endereço e tecle Enter" aria-label="Buscar ocorrências" />
           </form>
           <div class="status-tabs" aria-label="Filtrar por status">
             <button type="button" *ngFor="let tab of tabs" [class.selected]="status === tab.value" (click)="selectStatus(tab.value)">
@@ -78,7 +79,7 @@ const PAGE_SIZE = 25;
               <td><a class="protocol-link" [routerLink]="['/ocorrencias', row.id]">{{ row.protocol }}</a><small>{{ statusLabels[row.status] }}</small></td>
               <td><span class="table-evidence road-evidence"><span class="material-symbols-outlined">{{ icon(row.category) }}</span><small>{{ row.confirmation_count }} confirm.</small></span></td>
               <td><a class="occurrence-title" [routerLink]="['/ocorrencias', row.id]">{{ row.description || 'Reporte só com foto' }}</a><div class="category-label"><span>{{ categoryLabel(row.category) }}</span><ng-container *ngIf="row.immediate_risk"> • risco imediato</ng-container></div></td>
-              <td><strong class="address">{{ row.lat | number: '1.4-4' }}, {{ row.lon | number: '1.4-4' }}</strong><small>{{ row.agency?.name || 'Sem órgão' }}</small></td>
+              <td><strong class="address" [title]="locationLabel(row)">{{ locationLabel(row) }}</strong><small>{{ row.agency?.name || 'Sem órgão' }}</small></td>
               <td><span class="opened-time">{{ formatDateTime(row.received_at) }}</span><strong class="sla-time" [ngClass]="slaClass(row)">{{ deadlineLabel(row) }}</strong></td>
               <td><span class="priority-pill" [ngClass]="urgencyClass(row.urgency)"><i></i>{{ urgencyLabel(row.urgency) }}</span></td>
             </tr>
@@ -101,6 +102,7 @@ export class OccurrencesComponent implements OnInit {
   readonly statusLabels = STATUS_LABELS;
   readonly categoryLabel = categoryLabel;
   readonly formatDateTime = formatDateTime;
+  readonly locationLabel = locationLabel;
   readonly tabs: { value: StatusTab; label: string }[] = [
     { value: '', label: 'Todos' },
     { value: 'encaminhado', label: STATUS_LABELS.encaminhado },

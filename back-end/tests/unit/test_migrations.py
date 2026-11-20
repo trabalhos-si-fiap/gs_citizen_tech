@@ -246,3 +246,50 @@ class RepositoryMigrationsTests(unittest.TestCase):
                 # A migração roda depois do schema num banco novo; a tabela
                 # duplicada quebra a instalação limpa (ORA-00955).
                 self.assertFalse(set(created) & schema_tables)
+
+
+class ReportAddressMigrationTests(unittest.TestCase):
+    """Endereço textual do reporte (geocodificação reversa feita no app)."""
+
+    db_dir = Path(__file__).resolve().parents[2] / "db"
+
+    @staticmethod
+    def _normalized(text: str) -> str:
+        return " ".join(text.split()).lower()
+
+    def _v011_statements(self) -> list[str]:
+        script = self.db_dir / "migrations" / "V011__report_address.sql"
+        return split_sql_script(script.read_text(encoding="utf-8"))
+
+    def test_v011_adds_nullable_address_column_to_reports(self) -> None:
+        statements = [self._normalized(s) for s in self._v011_statements()]
+
+        self.assertIn(
+            "alter table reports add (address varchar2(200 char))", statements
+        )
+
+    def test_v011_keeps_address_immutable_like_other_citizen_content(self) -> None:
+        trigger = next(
+            self._normalized(statement)
+            for statement in self._v011_statements()
+            if "trg_reports_privacy_updates" in statement.lower()
+        )
+
+        self.assertIn("differs(:new.address, :old.address)", trigger)
+        self.assertIn("differs(:new.description, :old.description)", trigger)
+
+    def test_registrar_reporte_receives_and_inserts_address(self) -> None:
+        package = self._normalized(
+            (self.db_dir / "pkg_reportes.sql").read_text(encoding="utf-8")
+        )
+
+        # Mesma posição na especificação e no corpo: o Python chama por posição.
+        self.assertEqual(
+            package.count(
+                "p_has_photo in number, p_address in reports.address%type, "
+                "p_protocol out reports.protocol%type"
+            ),
+            2,
+        )
+        self.assertIn("correlation_id, has_photo, address ) values", package)
+        self.assertIn("p_correlation, p_has_photo, p_address );", package)

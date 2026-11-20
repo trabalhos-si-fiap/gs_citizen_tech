@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -172,13 +173,17 @@ class _MapTabState extends State<MapTab> {
                 TileLayer(
                   urlTemplate: osmTileUrl,
                   userAgentPackageName: 'br.fiap.reclameja.mobile',
+                  // Em telas 2x/3x, pede os tiles do zoom seguinte (quatro
+                  // por quadrado) para o mapa não sair esticado e borrado.
+                  retinaMode: RetinaMode.isHighDensity(context),
                 ),
               MarkerLayer(markers: [
                 Marker(
                   point: LatLng(
                       _userPosition.latitude, _userPosition.longitude),
-                  width: 48,
-                  height: 48,
+                  // O ponto fica no centro do marcador; o rótulo, acima dele.
+                  width: _UserLocationPin.width,
+                  height: _UserLocationPin.height,
                   child: const _UserLocationPin(),
                 ),
                 ..._store.items.map(_buildMarker),
@@ -326,22 +331,15 @@ class _MapTabState extends State<MapTab> {
     final isSelected = _activeFilter == label;
     return FilterChip(
       selected: isSelected,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != Icons.all_inclusive) ...[
-            Icon(icon,
-                size: 14,
-                color: isSelected
-                    ? ReclameJaColors.textDark
-                    : (color ?? ReclameJaColors.textMuted)),
-            const SizedBox(width: 4),
-          ],
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        ],
-      ),
+      avatar: icon == Icons.all_inclusive
+          ? null
+          : Icon(icon,
+              size: 14,
+              color: isSelected
+                  ? ReclameJaColors.textDark
+                  : (color ?? ReclameJaColors.textMuted)),
+      label: Text(label),
+      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
       backgroundColor: Colors.white.withValues(alpha: 0.95),
       selectedColor: ReclameJaColors.primaryYellow,
       showCheckmark: false,
@@ -485,41 +483,107 @@ class _MapTabState extends State<MapTab> {
   }
 }
 
+/// "Você está aqui": ponto azul com borda branca e halo, no padrão dos apps
+/// de mapa e distinto dos pinos vermelhos dos reportes, com rótulo explícito.
 class _UserLocationPin extends StatelessWidget {
   const _UserLocationPin();
 
+  static const double width = 140;
+  static const double height = 124;
+  static const _blue = Color(0xFF1A73E8);
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 48,
-      height: 48,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
+    return Semantics(
+      label: 'Sua localização',
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: _blue.withValues(alpha: 0.16),
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: _blue.withValues(alpha: 0.35), width: 1.5),
+              ),
             ),
-          ),
-          Container(
-            width: 14,
-            height: 14,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 4)
-              ],
-              border: Border.all(color: const Color(0xFF10B981), width: 4),
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: _blue,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3.5),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Colors.black38,
+                      blurRadius: 6,
+                      offset: Offset(0, 2)),
+                ],
+              ),
             ),
-          ),
-        ],
+            Positioned(
+              top: 0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: _blue,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black26, blurRadius: 4),
+                      ],
+                    ),
+                    child: const Text(
+                      'Você está aqui',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const CustomPaint(
+                    size: Size(12, 6),
+                    painter: _PinTailPainter(_blue),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Bico do balão do rótulo, apontando para o ponto.
+class _PinTailPainter extends CustomPainter {
+  const _PinTailPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_PinTailPainter oldDelegate) => oldDelegate.color != color;
 }
 
 class _FloatingMapButton extends StatelessWidget {

@@ -40,6 +40,15 @@ class CreateReportRequest(BaseModel):
     location_accuracy_m: float | None = None
     anonymous: bool = False
     client_created_at: datetime
+    # Endereço obtido no aparelho (geocodificação reversa); texto não confiável.
+    address: str | None = Field(default=None, max_length=200)
+
+    @field_validator("address", mode="before")
+    @classmethod
+    def normalize_address(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @model_validator(mode="after")
     def require_description_or_photo(self) -> "CreateReportRequest":
@@ -144,6 +153,7 @@ class AgencyResponse(BaseModel):
 
 class ReportDetailResponse(ReportSummaryResponse):
     description: str | None
+    address: str | None = None
     photo_url: str | None = None
     anonymous: bool
     has_photo: bool
@@ -174,8 +184,16 @@ class NearbyPageResponse(BaseModel):
     next_cursor: str | None
 
 
+class UserReportItemResponse(ReportSummaryResponse):
+    """Item de "Meus reportes": o app usa a descrição como título do card."""
+
+    description: str | None = None
+    subcategory: str | None = None
+    address: str | None = None
+
+
 class UserReportPageResponse(BaseModel):
-    items: list[ReportSummaryResponse]
+    items: list[UserReportItemResponse]
     next_cursor: str | None
 
 
@@ -193,6 +211,7 @@ class NewReport:
     correlation_id: UUID
     user_id: int | None
     requester_user_id: int
+    address: str | None = None
 
     def __post_init__(self) -> None:
         if not self.has_photo and not (
@@ -247,6 +266,8 @@ class ReportSummary:
     group_id: str
     confirmation_count: int
     subcategory: str | None = None
+    address: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)

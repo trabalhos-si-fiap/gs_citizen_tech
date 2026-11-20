@@ -84,6 +84,7 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
         category: ReportCategory = ReportCategory.URBAN_RISK,
         subcategory: str | None = None,
         citizen_id: int = 5001,
+        address: str | None = None,
     ):
         """Cria um reporte já classificado, confirmado e encaminhado ao órgão."""
         report_id = uuid4()
@@ -101,6 +102,7 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
                 correlation_id=uuid4(),
                 user_id=citizen_id,
                 requester_user_id=citizen_id,
+                address=address,
             )
         )
         classification = ClassificationResult(
@@ -251,6 +253,51 @@ class StaffApiTests(unittest.IsolatedAsyncioTestCase):
             f"/v1/staff/reports?cursor={uuid4()}", headers=headers
         )
         self.assertEqual(bad_cursor.status_code, 400)
+
+    async def test_list_and_detail_return_address_or_null(self) -> None:
+        with_address = self.create_forwarded_report(
+            address="Rua Exemplo, 123 – Bairro, Cidade"
+        )
+        without_address = self.create_forwarded_report()
+        headers = self.headers(self.zeladoria)
+
+        listed = await self.client.get("/v1/staff/reports?limit=100", headers=headers)
+        detail = await self.client.get(
+            f"/v1/staff/reports/{with_address}", headers=headers
+        )
+        old_detail = await self.client.get(
+            f"/v1/staff/reports/{without_address}", headers=headers
+        )
+
+        items = {item["id"]: item for item in listed.json()["items"]}
+        self.assertEqual(
+            items[str(with_address)]["address"],
+            "Rua Exemplo, 123 – Bairro, Cidade",
+        )
+        self.assertIn("address", items[str(without_address)])
+        self.assertIsNone(items[str(without_address)]["address"])
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["address"], "Rua Exemplo, 123 – Bairro, Cidade")
+        self.assertIn("address", old_detail.json())
+        self.assertIsNone(old_detail.json()["address"])
+
+    async def test_search_matches_address_ignoring_case(self) -> None:
+        marker = uuid4().hex[:8]
+        found = self.create_forwarded_report(
+            description="Cratera na pista",
+            address=f"Rua {marker}, 123 – Bairro, Cidade",
+        )
+        self.create_forwarded_report(description="Cratera na pista")
+
+        response = await self.client.get(
+            f"/v1/staff/reports?q=RUA {marker.upper()}",
+            headers=self.headers(self.manager),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in response.json()["items"]], [str(found)]
+        )
 
     async def test_summary_counts_by_status_within_scope(self) -> None:
         before = (

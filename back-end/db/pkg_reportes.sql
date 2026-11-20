@@ -12,6 +12,7 @@ CREATE OR REPLACE PACKAGE pkg_reportes AS
         p_correlation IN reports.correlation_id%TYPE,
         p_push_token IN notification_links.push_token%TYPE,
         p_has_photo IN NUMBER,
+        p_address IN reports.address%TYPE,
         p_protocol OUT reports.protocol%TYPE,
         p_created OUT NUMBER
     );
@@ -83,6 +84,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_reportes AS
         p_correlation IN reports.correlation_id%TYPE,
         p_push_token IN notification_links.push_token%TYPE,
         p_has_photo IN NUMBER,
+        p_address IN reports.address%TYPE,
         p_protocol OUT reports.protocol%TYPE,
         p_created OUT NUMBER
     ) IS
@@ -159,7 +161,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_reportes AS
                     client_created_at,
                     received_at,
                     correlation_id,
-                    has_photo
+                    has_photo,
+                    address
                 ) VALUES (
                     p_id,
                     p_protocol,
@@ -173,7 +176,8 @@ CREATE OR REPLACE PACKAGE BODY pkg_reportes AS
                     p_client_at,
                     SYSTIMESTAMP,
                     p_correlation,
-                    p_has_photo
+                    p_has_photo,
+                    p_address
                 );
                 p_created := 1;
                 EXIT;

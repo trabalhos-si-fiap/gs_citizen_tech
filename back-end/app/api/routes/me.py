@@ -9,7 +9,7 @@ from app.models.auth import DeleteAccountResponse, UpdateMeRequest, UserResponse
 from app.models.notifications import RegisterDeviceRequest
 from app.models.reports import (
     ReportStatus,
-    ReportSummaryResponse,
+    UserReportItemResponse,
     UserReportPageResponse,
 )
 from app.infrastructure.repositories import InvalidReportCursor
@@ -150,7 +150,7 @@ def list_my_reports(
     page = reports[:limit]
     return UserReportPageResponse(
         items=[
-            ReportSummaryResponse(
+            UserReportItemResponse(
                 id=report.id,
                 protocol=report.protocol,
                 status=report.status,
@@ -160,6 +160,9 @@ def list_my_reports(
                 received_at=report.received_at,
                 group_id=report.group_id,
                 confirmation_count=report.confirmation_count,
+                description=report.description,
+                subcategory=report.subcategory,
+                address=report.address,
             )
             for report in page
         ],

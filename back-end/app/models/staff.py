@@ -75,6 +75,7 @@ class StaffReportItem:
     agency_id: str | None
     agency_name: str | None
     confirmation_count: int
+    address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ class StaffReportItemResponse(BaseModel):
     overdue: bool
     agency: AgencyResponse | None
     confirmation_count: int
+    address: str | None = None
 
 
 class StaffReportPageResponse(BaseModel):

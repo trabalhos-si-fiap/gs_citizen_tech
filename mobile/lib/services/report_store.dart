@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'address_service.dart';
+import 'category_labels.dart';
+
 class ReportEvent {
   final String title;
   final String time;
@@ -34,6 +37,12 @@ class Report {
   final List<ReportEvent> timeline;
   final List<Map<String, String>> comments;
 
+  /// `triage_state` da API (vazio antes da primeira resposta).
+  final String triageState;
+
+  /// Urgência estimada na classificação: baixa, media, alta ou vazio.
+  final String urgency;
+
   Report({
     required this.id,
     this.apiId,
@@ -53,7 +62,13 @@ class Report {
     required this.forecast,
     required this.timeline,
     required this.comments,
+    this.triageState = '',
+    this.urgency = '',
   });
+
+  /// "Saúde • Falta de medicamento", sem separador quando falta uma parte.
+  String get classificationLabel =>
+      [category, subcategory].where((part) => part.isNotEmpty).join(' • ');
 
   Report copyWith({
     String? id,
@@ -74,6 +89,8 @@ class Report {
     String? forecast,
     List<ReportEvent>? timeline,
     List<Map<String, String>>? comments,
+    String? triageState,
+    String? urgency,
   }) {
     return Report(
       id: id ?? this.id,
@@ -94,6 +111,8 @@ class Report {
       forecast: forecast ?? this.forecast,
       timeline: timeline ?? this.timeline,
       comments: comments ?? this.comments,
+      triageState: triageState ?? this.triageState,
+      urgency: urgency ?? this.urgency,
     );
   }
 }
@@ -125,7 +144,7 @@ class ReportStore {
     _notify();
   }
 
-  void upsertFromApi(Map<String, dynamic> item) {
+  Report upsertFromApi(Map<String, dynamic> item) {
     final report = _reportFromApi(item);
     final index = _reports.indexWhere(
       (existing) => existing.apiId == report.apiId,
@@ -136,6 +155,7 @@ class ReportStore {
       _reports[index] = report;
     }
     _notify();
+    return report;
   }
 
   void removeByApiId(String apiId) {
@@ -161,9 +181,14 @@ class ReportStore {
   }
 
   Report _reportFromApi(Map<String, dynamic> item) {
-    final category = item['category']?.toString() ?? 'a_classificar';
+    final classification = item['classification'];
+    final category = (classification is Map
+            ? classification['category']?.toString()
+            : null) ??
+        item['category']?.toString() ??
+        'a_classificar';
     final receivedAt = DateTime.tryParse(
-          item['received_at']?.toString() ?? '',
+          _asUtcIso(item['received_at']?.toString() ?? ''),
         ) ??
         DateTime.now();
     final status = switch (item['status']?.toString()) {
@@ -188,42 +213,56 @@ class ReportStore {
             if (type == 'encaminhado') forwardedBefore = true;
             return ReportEvent(
               title: title,
-              time: _formatDateTime(date),
+              time: formatDateTime(date),
               desc: event['justification']?.toString() ?? '',
               actor: _actorLabel(event['actor']?.toString() ?? ''),
             );
           }).toList()
         : <ReportEvent>[];
-    final classification = item['classification'];
+    // O detalhe traz a subcategoria na classificação; a lista, no item.
     final subcategory = classification is Map
-        ? classification['subcategory']?.toString() ?? ''
-        : '';
+        ? classification['subcategory']?.toString()
+        : item['subcategory']?.toString();
     final deadline = DateTime.tryParse(
       _asUtcIso(item['deadline']?.toString() ?? ''),
     );
     final photo = item['photo_url']?.toString();
+    final description = item['description']?.toString().trim() ?? '';
+    final address = item['address']?.toString().trim() ?? '';
+    final lat = item['lat'];
+    final lon = item['lon'];
+    final coordinates = lat is num && lon is num
+        ? formatCoordinates(lat.toDouble(), lon.toDouble())
+        : '';
     return Report(
       id: item['protocol']?.toString() ?? item['id'].toString(),
       apiId: item['id']?.toString(),
-      title: (item['description']?.toString().trim().isNotEmpty ?? false)
-          ? item['description'].toString()
-          : 'Ocorrência urbana',
+      title: description.isNotEmpty
+          ? _truncate(description)
+          : category == 'a_classificar'
+              ? 'Ocorrência urbana'
+              : labelForCategory(category),
       description: item['description']?.toString() ?? '',
-      location: '${item['lat'] ?? ''}, ${item['lon'] ?? ''}',
-      details: '',
-      category: category,
-      subcategory: _humanize(subcategory),
+      // Endereço para o munícipe; as coordenadas ficam como detalhe.
+      location: address.isNotEmpty ? address : coordinates,
+      details: address.isNotEmpty ? coordinates : '',
+      category: labelForCategory(category),
+      subcategory: labelForSubcategory(subcategory),
       status: status,
       organ: item['agency'] is Map
           ? (item['agency'] as Map)['name']?.toString() ?? ''
           : '',
       confirmationCount: (item['confirmation_count'] as num?)?.toInt() ?? 0,
-      clientCreatedAt: receivedAt.toLocal().toString(),
+      clientCreatedAt: formatDateTime(receivedAt),
       imageUrl: photo,
-      forecast: deadline == null ? '' : 'Prazo: ${_formatDateTime(deadline)}',
+      forecast: deadline == null ? '' : 'Prazo: ${formatDateTime(deadline)}',
 
       timeline: timeline,
       comments: const [],
+      triageState: item['triage_state']?.toString() ?? '',
+      urgency: classification is Map
+          ? classification['urgency']?.toString() ?? ''
+          : '',
     );
   }
 
@@ -465,15 +504,14 @@ String _asUtcIso(String value) {
   return hasZone ? value : '${value}Z';
 }
 
-String _formatDateTime(DateTime value) {
+/// Data e hora no fuso do aparelho: "19/11/2026 às 20:18".
+String formatDateTime(DateTime value) {
   final local = value.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(local.day)}/${two(local.month)}/${local.year} '
+  return '${two(local.day)}/${two(local.month)}/${local.year} às '
       '${two(local.hour)}:${two(local.minute)}';
 }
 
-String _humanize(String code) {
-  if (code.isEmpty || code == 'a_classificar') return '';
-  final text = code.replaceAll('_', ' ');
-  return text[0].toUpperCase() + text.substring(1);
-}
+/// Relato longo vira título de uma linha.
+String _truncate(String text, {int max = 60}) =>
+    text.length <= max ? text : '${text.substring(0, max).trimRight()}…';

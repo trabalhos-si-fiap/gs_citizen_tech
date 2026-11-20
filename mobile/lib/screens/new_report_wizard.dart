@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,13 +10,28 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import '../app_theme.dart';
 import '../services/report_store.dart';
+import '../services/address_service.dart';
 import '../services/api_client.dart';
+import '../services/category_labels.dart';
 import '../services/outbox_store.dart';
 import '../services/session_store.dart';
 import 'post_send_confirmation_screen.dart';
 
+/// Limite do relato no app (a API aceita até 1000 caracteres).
+const maxDescriptionLength = 300;
+
+/// A API só aceita o reporte com foto ou com descrição.
+bool reportHasContent({required bool hasPhoto, required String description}) =>
+    hasPhoto || description.trim().isNotEmpty;
+
 class NewReportWizard extends StatefulWidget {
-  const NewReportWizard({super.key});
+  const NewReportWizard({super.key, this.positionSource, this.addressLookup});
+
+  /// GPS do aparelho; os testes passam uma posição fixa.
+  final Future<Position> Function()? positionSource;
+
+  /// Endereço da posição capturada; padrão: [defaultAddressLookup].
+  final AddressLookup? addressLookup;
 
   @override
   State<NewReportWizard> createState() => _NewReportWizardState();
@@ -31,14 +46,14 @@ class _NewReportWizardState extends State<NewReportWizard> {
   String? _attachedPhotoUrl;
   Uint8List? _attachedPhotoBytes;
   Position? _position;
+  String? _address;
   bool _isLocating = false;
-  final _referencePointController =
-      TextEditingController(text: 'Em frente à padaria Estrela');
-  final _descriptionController = TextEditingController(
-      text:
-          'Grande buraco aberto na pista da direita após a chuva forte, oferecendo risco de queda a ciclistas e pedestres no cruzamento.');
-  String _selectedCategory = 'Risco Urbano';
-  String _selectedSubcategory = 'Pavimentação';
+  final _referencePointController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  bool _descriptionMissing = false;
+  // Sem escolha (null), a IA classifica o reporte depois do envio.
+  String? _selectedCategory;
+  String? _selectedSubcategory;
 
   final List<Map<String, String>> _categories = [
     {'name': 'Pavimentação', 'group': 'Risco Urbano', 'icon': 'add_road'},
@@ -62,10 +77,22 @@ class _NewReportWizardState extends State<NewReportWizard> {
 
   void _nextStep() {
     if (_currentStep == 1 && _attachedPhotoUrl == null) {
-      // Allow moving forward, but show warning that adding a photo is recommended
+      // A foto é opcional: segue, mas avisa que ela ajuda na avaliação.
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Foto anexada com sucesso!')),
+        const SnackBar(
+          content: Text(
+              'Sem foto: anexar uma imagem ajuda a equipe a avaliar o problema.'),
+        ),
       );
+    }
+
+    if (_currentStep == 3 &&
+        !reportHasContent(
+          hasPhoto: _attachedPhotoUrl != null,
+          description: _descriptionController.text,
+        )) {
+      setState(() => _descriptionMissing = true);
+      return;
     }
 
     if (_currentStep < 4) {
@@ -151,26 +178,14 @@ class _NewReportWizardState extends State<NewReportWizard> {
   Future<void> _captureLocation() async {
     setState(() => _isLocating = true);
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        throw StateError('Ative o serviço de localização para continuar.');
-      }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        throw StateError(
-            'Permita o acesso à localização para registrar o local.');
-      }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
-      );
+      final position =
+          await (widget.positionSource ?? _currentDevicePosition)();
+      final address = await _addressOf(position);
       if (!mounted) return;
-      setState(() => _position = position);
+      setState(() {
+        _position = position;
+        _address = address;
+      });
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -188,34 +203,36 @@ class _NewReportWizardState extends State<NewReportWizard> {
     }
   }
 
-  void _simulateVoiceDictation() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.mic, color: Colors.white),
-            SizedBox(width: 8),
-            Text('Ouvindo... Fale o relato do problema.'),
-          ],
-        ),
-        backgroundColor: ReclameJaColors.secondaryEmerald,
-        duration: Duration(seconds: 2),
+  /// Endereço legível da posição. Sem resposta em 5 s, ou com falha, segue
+  /// sem endereço: o envio funciona e a tela mostra as coordenadas.
+  Future<String?> _addressOf(Position position) async {
+    try {
+      return await (widget.addressLookup ?? defaultAddressLookup)
+          .addressFor(position.latitude, position.longitude)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Position> _currentDevicePosition() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw StateError('Ative o serviço de localização para continuar.');
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw StateError('Permita o acesso à localização para registrar o local.');
+    }
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 20),
       ),
     );
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _descriptionController.text =
-              'Identifiquei um bueiro sem tampa exalando mau cheiro e gerando risco de queda para crianças próximo à escola.';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ditado concluído com sucesso!'),
-            backgroundColor: ReclameJaColors.secondaryEmerald,
-          ),
-        );
-      }
-    });
   }
 
   Future<void> _submitReport() async {
@@ -244,23 +261,28 @@ class _NewReportWizardState extends State<NewReportWizard> {
     }
 
     final reportId = const Uuid().v4();
-    final createdAt = DateTime.now().toUtc().toIso8601String();
-    final category = {
-          'Risco Urbano': 'risco_urbano',
-          'Transporte': 'transporte_publico',
-          'Saúde': 'saude_atendimento',
-        }[_selectedCategory] ??
-        'a_classificar';
+    final now = DateTime.now();
+    final createdAt = now.toUtc().toIso8601String();
+    // Sem categoria escolhida o campo não é enviado: a IA classifica sem o
+    // palpite do app (que ela tenderia a repetir).
+    final category = const {
+      'Risco Urbano': 'risco_urbano',
+      'Transporte': 'transporte_publico',
+      'Saúde': 'saude_atendimento',
+    }[_selectedCategory];
+    final coordinates =
+        formatCoordinates(_position!.latitude, _position!.longitude);
     final outboxPayload = <String, dynamic>{
       'id': reportId,
       'description': _descriptionController.text.trim(),
       'has_photo': _attachedPhotoBytes != null,
       'photo_path': _attachedPhotoUrl,
-      'category': category,
+      if (category != null) 'category': category,
       'lat': _position!.latitude,
       'lon': _position!.longitude,
       'location_accuracy_m': _position!.accuracy,
       'anonymous': _isAnonymous,
+      if (_address != null) 'address': _address,
       'client_created_at': createdAt,
     };
     var pendingSync = _isOfflineSimulated;
@@ -280,6 +302,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
           category: category,
           hasPhoto: _attachedPhotoBytes != null,
           clientCreatedAt: createdAt,
+          address: _address,
         );
         apiProtocol = created['protocol'] as String?;
         apiReportId = created['id'] as String?;
@@ -322,23 +345,23 @@ class _NewReportWizardState extends State<NewReportWizard> {
       apiId: apiReportId ?? reportId,
       title: title.isNotEmpty ? title : 'Chamado de Zeladoria Urbana',
       description: _descriptionController.text,
-      location:
-          '${_position!.latitude.toStringAsFixed(5)}, ${_position!.longitude.toStringAsFixed(5)}',
+      location: _address ?? coordinates,
       details: _referencePointController.text.trim(),
-      category: _selectedCategory,
-      subcategory: _selectedSubcategory,
+      category: _selectedCategory ?? labelForCategory(null),
+      subcategory: _selectedSubcategory ?? '',
       status: 'Recebido',
-      organ: _getOrganForCategory(_selectedCategory, _selectedSubcategory),
+      // Órgão e prazo vêm do encaminhamento feito pela API.
+      organ: '',
       confirmationCount: 1,
       isUserConfirmed: true,
-      clientCreatedAt: '16/11/2026',
+      clientCreatedAt: formatDateTime(now),
       isOffline: pendingSync,
       imageUrl: _attachedPhotoUrl,
-      forecast: 'Resposta prevista em até 48h úteis',
+      forecast: '',
       timeline: [
         ReportEvent(
           title: 'Recebido',
-          time: '16/11 às 17:04',
+          time: formatDateTime(now),
           desc: _isOfflineSimulated
               ? 'Salvo localmente no aparelho no modo offline. Aguardando conexão para envio.'
               : 'Cadastrado e validado com sucesso pelo munícipe.',
@@ -366,18 +389,6 @@ class _NewReportWizardState extends State<NewReportWizard> {
         builder: (context) => PostSendConfirmationScreen(report: newReport),
       ),
     );
-  }
-
-  String _getOrganForCategory(String cat, String sub) {
-    if (cat == 'Transporte') {
-      return 'SPTrans / Operadora Distrital de Transportes';
-    } else if (cat == 'Saúde') {
-      return 'Ouvidoria de Saúde / Secretaria Municipal de Saúde';
-    } else if (sub == 'Água e Esgoto') {
-      return 'Sabesp / Central de Saneamento Distrital';
-    } else {
-      return 'Secretaria Municipal de Infraestrutura Urbana e Obras (SIURB)';
-    }
   }
 
   @override
@@ -917,7 +928,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
                           Text(
                             _position == null
                                 ? 'Localização ainda não capturada'
-                                : '${_position!.latitude.toStringAsFixed(5)}, ${_position!.longitude.toStringAsFixed(5)}',
+                                : 'Localização capturada',
                             style: textTheme.labelMedium,
                           ),
                         ],
@@ -983,32 +994,28 @@ class _NewReportWizardState extends State<NewReportWizard> {
                           Text(
                             _position == null
                                 ? 'Aguardando localização GPS'
-                                : '${_position!.latitude.toStringAsFixed(6)}, ${_position!.longitude.toStringAsFixed(6)}',
+                                : _address ??
+                                    formatCoordinates(_position!.latitude,
+                                        _position!.longitude),
                             style: textTheme.labelLarge?.copyWith(
                                 fontSize: 13, fontWeight: FontWeight.bold),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Text(
-                                _position == null
-                                    ? 'Toque em Capturar GPS'
-                                    : 'Precisão ±${_position!.accuracy.toStringAsFixed(0)} m',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: ReclameJaColors.textMuted,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: const BoxDecoration(
-                                      color: ReclameJaColors.textMuted,
-                                      shape: BoxShape.circle)),
-                              const SizedBox(width: 6),
-                            ],
+                          // Coordenadas só como detalhe, quando há endereço.
+                          Text(
+                            _position == null
+                                ? 'Toque em Capturar GPS'
+                                : [
+                                    'Precisão ±${_position!.accuracy.toStringAsFixed(0)} m',
+                                    if (_address != null)
+                                      formatCoordinates(_position!.latitude,
+                                          _position!.longitude),
+                                  ].join(' • '),
+                            style: textTheme.bodySmall?.copyWith(
+                              color: ReclameJaColors.textMuted,
+                            ),
                           ),
                         ],
                       ),
@@ -1044,59 +1051,52 @@ class _NewReportWizardState extends State<NewReportWizard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('3. O que você observou?',
-                            style: textTheme.headlineSmall),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Descreva em detalhes o ocorrido.',
-                          style: textTheme.bodySmall?.copyWith(
-                              color: ReclameJaColors.textMuted, height: 1.4),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.mic,
-                        color: ReclameJaColors.secondaryEmerald),
-                    tooltip: 'Ditar por voz',
-                    onPressed: _simulateVoiceDictation,
-                  ),
-                ],
+              Text('3. O que você observou?', style: textTheme.headlineSmall),
+              const SizedBox(height: 4),
+              Text(
+                'Descreva em detalhes o ocorrido.',
+                style: textTheme.bodySmall
+                    ?.copyWith(color: ReclameJaColors.textMuted, height: 1.4),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _descriptionController,
                 maxLines: 5,
-                decoration: const InputDecoration(
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(maxDescriptionLength),
+                ],
+                // Atualiza o contador e o indicador enquanto o munícipe digita.
+                onChanged: (_) => setState(() => _descriptionMissing = false),
+                decoration: InputDecoration(
                   hintText:
                       'Ex: Grande buraco aberto na pista da direita após a chuva forte, oferecendo risco de queda...',
+                  errorText: _descriptionMissing
+                      ? 'Descreva o que você observou ou anexe uma foto.'
+                      : null,
+                  errorMaxLines: 2,
                 ),
               ),
               const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.check_circle,
-                          color: ReclameJaColors.secondaryEmerald, size: 14),
-                      SizedBox(width: 4),
-                      Text('Boa descrição informada',
-                          style: TextStyle(
-                              color: ReclameJaColors.secondaryEmerald,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold)),
-                    ],
-                  ),
+                  if (_descriptionController.text.trim().isEmpty)
+                    const SizedBox.shrink()
+                  else
+                    const Row(
+                      children: [
+                        Icon(Icons.check_circle,
+                            color: ReclameJaColors.secondaryEmerald, size: 14),
+                        SizedBox(width: 4),
+                        Text('Boa descrição informada',
+                            style: TextStyle(
+                                color: ReclameJaColors.secondaryEmerald,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   Text(
-                    '${_descriptionController.text.length} / 300',
+                    '${_descriptionController.text.length} / $maxDescriptionLength',
                     style: textTheme.bodySmall
                         ?.copyWith(color: ReclameJaColors.textMuted),
                   ),
@@ -1126,7 +1126,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
               ),
               const SizedBox(height: 16),
 
-              // AI Suggestion Banner
+              // Como a IA entra: depois do envio, com confirmação do munícipe.
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -1137,71 +1137,32 @@ class _NewReportWizardState extends State<NewReportWizard> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: ReclameJaColors.secondaryEmerald,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.auto_awesome,
-                          color: Colors.white, size: 16),
-                    ),
+                    const Icon(Icons.auto_awesome,
+                        color: ReclameJaColors.secondaryEmerald, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Sugestão IA • Reclame Já',
-                                style: textTheme.labelLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: ReclameJaColors.onGreenContainer,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: ReclameJaColors.primaryYellow,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  '98% certeza',
-                                  style: textTheme.labelSmall?.copyWith(
-                                      fontSize: 9, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          RichText(
-                            text: TextSpan(
-                              style: textTheme.bodySmall
-                                  ?.copyWith(color: ReclameJaColors.textDark),
-                              children: [
-                                const TextSpan(text: 'Identificamos o tema '),
-                                TextSpan(
-                                  text:
-                                      '$_selectedCategory - $_selectedSubcategory',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-                                const TextSpan(
-                                    text:
-                                        ' a partir do relato fotográfico e descritivo.'),
-                              ],
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        'Depois do envio, a IA classifica o reporte a partir do seu relato. Você confere e confirma a categoria na próxima tela.',
+                        style: textTheme.bodySmall?.copyWith(
+                            color: ReclameJaColors.onGreenContainer,
+                            height: 1.4),
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
+
+              _buildCategoryOption(
+                label: 'Deixar a IA classificar',
+                icon: Icons.auto_awesome,
+                isSelected: _selectedCategory == null,
+                onTap: () => setState(() {
+                  _selectedCategory = null;
+                  _selectedSubcategory = null;
+                }),
+              ),
+              const SizedBox(height: 8),
 
               // Categories Grid
               GridView.builder(
@@ -1219,56 +1180,14 @@ class _NewReportWizardState extends State<NewReportWizard> {
                   final isSelected = cat['group'] == _selectedCategory &&
                       cat['name'] == _selectedSubcategory;
 
-                  return Material(
-                    color: isSelected
-                        ? ReclameJaColors.primaryYellow
-                        : ReclameJaColors.surfaceLow,
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () {
-                        setState(() {
-                          _selectedCategory = cat['group']!;
-                          _selectedSubcategory = cat['name']!;
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _getIconData(cat['icon']!),
-                                    color: ReclameJaColors.textDark,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      cat['name']!,
-                                      style: textTheme.labelMedium?.copyWith(
-                                        fontWeight: isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: ReclameJaColors.textDark,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isSelected)
-                              const Icon(Icons.check,
-                                  color: ReclameJaColors.textDark, size: 16),
-                          ],
-                        ),
-                      ),
-                    ),
+                  return _buildCategoryOption(
+                    label: cat['name']!,
+                    icon: _getIconData(cat['icon']!),
+                    isSelected: isSelected,
+                    onTap: () => setState(() {
+                      _selectedCategory = cat['group']!;
+                      _selectedSubcategory = cat['name']!;
+                    }),
                   );
                 },
               ),
@@ -1321,6 +1240,48 @@ class _NewReportWizardState extends State<NewReportWizard> {
       default:
         return const SizedBox();
     }
+  }
+
+  Widget _buildCategoryOption({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: isSelected
+          ? ReclameJaColors.primaryYellow
+          : ReclameJaColors.surfaceLow,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: ReclameJaColors.textDark, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: ReclameJaColors.textDark,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isSelected)
+                const Icon(Icons.check,
+                    color: ReclameJaColors.textDark, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   IconData _getIconData(String name) {
@@ -1384,9 +1345,15 @@ class _EmergencyDialButton extends StatelessWidget {
           children: [
             const Icon(Icons.call, size: 12),
             const SizedBox(width: 4),
-            Text(label,
-                style:
-                    const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+            // Três botões dividem a largura: o rótulo encolhe para caber.
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.bold)),
+              ),
+            ),
           ],
         ),
       ),
