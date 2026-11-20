@@ -14,6 +14,8 @@ export interface StaffReportItem {
   urgency: string | null;
   immediate_risk: boolean | null;
   description: string | null;
+  /** Endereço textual gerado no aparelho do cidadão; null em reportes antigos. */
+  address: string | null;
   lat: number;
   lon: number;
   received_at: string;
@@ -54,6 +56,8 @@ export interface ReportDetail {
   group_id: string;
   confirmation_count: number;
   description: string | null;
+  /** Endereço textual gerado no aparelho do cidadão; null em reportes antigos. */
+  address: string | null;
   photo_url: string | null;
   anonymous: boolean;
   has_photo: boolean;

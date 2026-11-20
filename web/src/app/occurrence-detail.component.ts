@@ -10,8 +10,10 @@ import {
   STATUS_LABELS,
   URGENCY_LABELS,
   categoryLabel,
+  coordinatesLabel,
   deadlineLabel,
   formatDateTime,
+  locationLabel,
   subcategoryLabel,
   toDateTimeLocal,
 } from './labels';
@@ -66,7 +68,7 @@ import { AgencyRef, ReportCategory, ReportDetail, StatusChange } from './staff.m
             </section>
 
             <section class="content-card map-card">
-              <div class="card-title-row"><span class="title-icon neutral-tint"><span class="material-symbols-outlined">map</span></span><div><h2>Localização</h2><p>{{ r.lat | number: '1.5-5' }}, {{ r.lon | number: '1.5-5' }}</p></div><a [href]="osmLink(r)" target="_blank" rel="noreferrer">Abrir no mapa <span class="material-symbols-outlined">open_in_new</span></a></div>
+              <div class="card-title-row"><span class="title-icon neutral-tint"><span class="material-symbols-outlined">map</span></span><div><h2>Localização</h2><p class="location-address">{{ locationLabel(r, 5) }}</p><p class="location-coordinates" *ngIf="r.address?.trim()">{{ coordinatesLabel(r.lat, r.lon, 5) }}</p></div><a [href]="osmLink(r)" target="_blank" rel="noreferrer">Abrir no mapa <span class="material-symbols-outlined">open_in_new</span></a></div>
               <iframe class="report-map" [src]="mapUrl()" title="Mapa da ocorrência" loading="lazy"></iframe>
             </section>
 
@@ -168,6 +170,8 @@ export class OccurrenceDetailComponent implements OnInit {
   readonly subcategoryLabel = subcategoryLabel;
   readonly formatDateTime = formatDateTime;
   readonly deadlineLabel = deadlineLabel;
+  readonly locationLabel = locationLabel;
+  readonly coordinatesLabel = coordinatesLabel;
   readonly categories = (Object.keys(CATEGORY_LABELS) as ReportCategory[]).map((value) => ({
     value,
     label: CATEGORY_LABELS[value],

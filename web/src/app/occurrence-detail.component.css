@@ -578,6 +578,19 @@
   font-size: 13px;
 }
 
+/* Endereço enviado pelo app como linha principal; coordenadas como apoio. */
+.map-card .card-title-row .location-address {
+  color: var(--color-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.map-card .card-title-row .location-coordinates {
+  margin-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
 .map-card .card-title-row > a {
   display: flex;
   align-items: center;
