@@ -75,7 +75,9 @@ class _RegionTabState extends State<RegionTab> {
       body: RefreshIndicator(
         onRefresh: _loadMetrics,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          // Folga no fim para o último item sair de baixo do botão flutuante
+          // "Reportar problema" do HomeShell.
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
             Text(
               'Transparência & Métricas',

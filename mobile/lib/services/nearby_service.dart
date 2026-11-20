@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
+import 'category_labels.dart';
 import 'report_store.dart';
 
 /// Rótulos dos chips de filtro e o valor correspondente na API.
@@ -11,12 +12,6 @@ const Map<String, String> _categoryByLabel = {
   'Risco Urbano': 'risco_urbano',
   'Transporte': 'transporte_publico',
   'Saúde': 'saude_atendimento',
-};
-
-const Map<String, String> _labelByCategory = {
-  'risco_urbano': 'Risco Urbano',
-  'transporte_publico': 'Transporte',
-  'saude_atendimento': 'Saúde',
 };
 
 /// Valor de `category` da API para o rótulo de um chip (`null` = todas).
@@ -67,7 +62,7 @@ class NearbyReport {
   final DateTime? receivedAt;
   final int distanceM;
 
-  String get categoryLabel => _labelByCategory[category] ?? 'A classificar';
+  String get categoryLabel => labelForCategory(category);
   String get statusLabel => _statusLabel(status);
 
   /// Distância legível: "80 m" ou "1,2 km".

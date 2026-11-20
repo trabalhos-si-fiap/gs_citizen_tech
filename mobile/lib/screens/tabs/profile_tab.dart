@@ -247,7 +247,9 @@ class ProfileTab extends StatelessWidget {
         centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        // Folga no fim para o último item sair de baixo do botão flutuante
+        // "Reportar problema" do HomeShell (56 dp + 16 dp de margem).
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

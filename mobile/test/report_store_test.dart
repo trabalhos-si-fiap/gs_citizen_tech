@@ -51,7 +51,7 @@ void main() {
 
     final report = store.allReports.firstWhere((r) => r.id == 'RPT-2026-REDIR1');
     expect(report.organ, 'Saneamento Demo');
-    expect(report.subcategory, 'Esgoto vazamento');
+    expect(report.subcategory, 'Esgoto e vazamento');
     expect(report.forecast, startsWith('Prazo: 21/11/2026'));
     expect(report.timeline.first.title, 'Reporte recebido');
     expect(report.timeline.last.title, 'Redirecionado a outro órgão');

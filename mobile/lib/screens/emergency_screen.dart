@@ -202,15 +202,19 @@ class EmergencyScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: ReclameJaColors.textDark,
+                        // O título quebra linha em vez de empurrar o número
+                        // para fora do cartão em telas estreitas.
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: ReclameJaColors.textDark,
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 4),

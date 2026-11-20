@@ -262,7 +262,9 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
             child: filteredList.isEmpty
                 ? _buildEmptyState()
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16.0),
+                    // Folga no fim para o último cartão sair de baixo do botão
+                    // flutuante "Reportar problema" do HomeShell.
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                     itemCount: filteredList.length,
                     itemBuilder: (context, index) {
                       final r = filteredList[index];
@@ -424,6 +426,26 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (r.classificationLabel.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.category_outlined,
+                        size: 12, color: ReclameJaColors.textMuted),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        r.classificationLabel,
+                        style: textTheme.bodySmall?.copyWith(
+                            color: ReclameJaColors.textDark,
+                            fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 4),
               Row(
                 children: [

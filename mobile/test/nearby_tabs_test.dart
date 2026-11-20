@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -136,5 +137,40 @@ void main() {
 
     expect(find.byKey(const ValueKey('nearby-marker-a1')), findsOneWidget);
     expect(find.byKey(const ValueKey('nearby-marker-b2')), findsOneWidget);
+  });
+
+  testWidgets('map tiles stay sharp on high-density screens', (tester) async {
+    // Densidade 3.0, como o Galaxy S20 FE. Sem retina, o tile de 256 px é
+    // esticado 3x e o mapa fica borrado.
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_wrap(MapTab(
+      isVisitor: true,
+      userName: 'Visitante',
+      nearbyStore: _store([]),
+      locationService: const _FixedLocation(),
+    )));
+    await tester.pump();
+
+    final tiles = tester.widget<TileLayer>(find.byType(TileLayer));
+    expect(tiles.resolvedRetinaMode, RetinaMode.simulation);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('map marks the citizen position as "you are here"',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(_wrap(MapTab(
+      isVisitor: true,
+      userName: 'Visitante',
+      nearbyStore: _store([]),
+      locationService: const _FixedLocation(),
+      showTiles: false,
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel(RegExp('Sua localização')), findsOneWidget);
+    expect(find.text('Você está aqui'), findsOneWidget);
+    semantics.dispose();
   });
 }
