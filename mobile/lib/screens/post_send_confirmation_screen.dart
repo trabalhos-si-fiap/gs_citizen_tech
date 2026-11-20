@@ -19,6 +19,18 @@ class PostSendConfirmationScreen extends StatefulWidget {
       _PostSendConfirmationScreenState();
 }
 
+class _WorkflowStep {
+  const _WorkflowStep({
+    required this.icon,
+    required this.title,
+    required this.description,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+}
+
 class _PostSendConfirmationScreenState
     extends State<PostSendConfirmationScreen> {
   /// Intervalo entre consultas enquanto a IA classifica.
@@ -77,7 +89,8 @@ class _PostSendConfirmationScreenState
     if (!mounted) return;
     setState(() {
       // A foto local continua na tela enquanto a da API não fica pronta.
-      _report = updated.copyWith(imageUrl: updated.imageUrl ?? _report.imageUrl);
+      _report =
+          updated.copyWith(imageUrl: updated.imageUrl ?? _report.imageUrl);
     });
   }
 
@@ -143,9 +156,78 @@ class _PostSendConfirmationScreenState
     );
   }
 
+  List<_WorkflowStep> _workflowSteps() {
+    final category = _report.category.toLowerCase();
+    if (category.contains('transporte') || category.contains('mobilidade')) {
+      return const [
+        _WorkflowStep(
+          icon: Icons.directions_bus_outlined,
+          title: '1. Encaminhamento à mobilidade',
+          description:
+              'O relato é enviado à central responsável pela operação de transporte.',
+        ),
+        _WorkflowStep(
+          icon: Icons.manage_search_outlined,
+          title: '2. Análise da operação',
+          description:
+              'A operação avalia a linha, parada ou trajeto informado e define a ação necessária.',
+        ),
+        _WorkflowStep(
+          icon: Icons.notifications_active_outlined,
+          title: '3. Atualização do atendimento',
+          description:
+              'Você receberá as atualizações e a resposta da operação pelo aplicativo.',
+        ),
+      ];
+    }
+    if (category.contains('saúde') || category.contains('saude')) {
+      return const [
+        _WorkflowStep(
+          icon: Icons.health_and_safety_outlined,
+          title: '1. Encaminhamento à ouvidoria',
+          description:
+              'A manifestação é encaminhada à ouvidoria responsável pelo atendimento de saúde.',
+        ),
+        _WorkflowStep(
+          icon: Icons.fact_check_outlined,
+          title: '2. Análise do atendimento',
+          description:
+              'A unidade responsável analisa as informações relatadas e o histórico do atendimento.',
+        ),
+        _WorkflowStep(
+          icon: Icons.notifications_active_outlined,
+          title: '3. Retorno ao cidadão',
+          description:
+              'A resposta da ouvidoria e eventuais atualizações serão enviadas pelo aplicativo.',
+        ),
+      ];
+    }
+    return const [
+      _WorkflowStep(
+        icon: Icons.assignment_turned_in_outlined,
+        title: '1. Encaminhamento oficial',
+        description:
+            'Inclusão no sistema de zeladoria e encaminhamento à base técnica responsável.',
+      ),
+      _WorkflowStep(
+        icon: Icons.engineering_outlined,
+        title: '2. Vistoria técnica',
+        description:
+            'A equipe de campo avalia a extensão do problema e define a ordem de serviço.',
+      ),
+      _WorkflowStep(
+        icon: Icons.notifications_active_outlined,
+        title: '3. Notificações diretas',
+        description:
+            'Você receberá as atualizações de vistoria, execução e conclusão do reparo.',
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final workflowSteps = _workflowSteps();
 
     return Scaffold(
       appBar: AppBar(
@@ -513,88 +595,91 @@ class _PostSendConfirmationScreenState
                   // Validation Action Blocks
                   if (_report.triageState == 'awaiting_user' ||
                       _isClassificationConfirmed)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (!_isClassificationConfirmed) ...[
-                        Center(
-                          child: Text(
-                            'As informações correspondem ao problema?',
-                            style: textTheme.bodyMedium,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                      if (!_isClassificationConfirmed)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: ReclameJaColors.textDark,
-                                  side: const BorderSide(
-                                      color: ReclameJaColors.borderSlate),
-                                  minimumSize: const Size.fromHeight(48),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10)),
-                                ),
-                                onPressed: _correctData,
-                                icon: const Icon(Icons.edit, size: 16),
-                                label: const Text('Corrigir dados',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold)),
-                              ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!_isClassificationConfirmed) ...[
+                          Center(
+                            child: Text(
+                              'As informações correspondem ao problema?',
+                              style: textTheme.bodyMedium,
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      ReclameJaColors.primaryYellow,
-                                  foregroundColor: ReclameJaColors.textDark,
-                                  minimumSize: const Size.fromHeight(48),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10)),
-                                ),
-                                onPressed: _confirmData,
-                                icon: const Icon(Icons.thumb_up_alt_outlined,
-                                    size: 16),
-                                label: const Text('Sim, confirmar',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          const SizedBox(height: 12),
+                        ],
+                        if (!_isClassificationConfirmed)
+                          Row(
                             children: [
-                              const Icon(Icons.check_circle,
-                                  color: Color(0xFF16A34A), size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Dados validados com sucesso!',
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: const Color(0xFF14532D),
-                                  fontWeight: FontWeight.bold,
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ReclameJaColors.textDark,
+                                    side: const BorderSide(
+                                        color: ReclameJaColors.borderSlate),
+                                    minimumSize: const Size.fromHeight(48),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: _correctData,
+                                  icon: const Icon(Icons.edit, size: 16),
+                                  label: const Text('Corrigir dados',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        ReclameJaColors.primaryYellow,
+                                    foregroundColor: ReclameJaColors.textDark,
+                                    minimumSize: const Size.fromHeight(48),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                  ),
+                                  onPressed: _confirmData,
+                                  icon: const Icon(Icons.thumb_up_alt_outlined,
+                                      size: 16),
+                                  label: const Text('Sim, confirmar',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold)),
                                 ),
                               ),
                             ],
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: const Color(0xFF86EFAC)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle,
+                                    color: Color(0xFF16A34A), size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Dados validados com sucesso!',
+                                  style: textTheme.labelMedium?.copyWith(
+                                    color: const Color(0xFF14532D),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -644,28 +729,15 @@ class _PostSendConfirmationScreenState
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _buildTimelineItem(
-                    icon: Icons.assignment_turned_in_outlined,
-                    stepTitle: '1. Encaminhamento oficial',
-                    description:
-                        'Inclusão no sistema central de zeladoria e agendamento na base técnica distrital.',
-                    isDone: _report.organ.isNotEmpty,
-                  ),
-                  _buildTimelineItem(
-                    icon: Icons.engineering_outlined,
-                    stepTitle: '2. Vistoria técnica',
-                    description:
-                        'Equipe de campo avalia a extensão do dano e emite a ordem de serviço operacional.',
-                    isDone: false,
-                  ),
-                  _buildTimelineItem(
-                    icon: Icons.notifications_active_outlined,
-                    stepTitle: '3. Notificações diretas',
-                    description:
-                        'Receba fotos de vistoria, início das obras e o registro da conclusão do reparo.',
-                    isDone: false,
-                    isLast: true,
-                  ),
+                  ...workflowSteps.asMap().entries.map(
+                        (entry) => _buildTimelineItem(
+                          icon: entry.value.icon,
+                          stepTitle: entry.value.title,
+                          description: entry.value.description,
+                          isDone: entry.key == 0 && _report.organ.isNotEmpty,
+                          isLast: entry.key == workflowSteps.length - 1,
+                        ),
+                      ),
                 ],
               ),
             ),
@@ -862,7 +934,8 @@ class _CorrectClassificationDialogState
             backgroundColor: ReclameJaColors.primaryYellow,
             foregroundColor: ReclameJaColors.textDark,
           ),
-          onPressed: choice == null ? null : () => Navigator.pop(context, choice),
+          onPressed:
+              choice == null ? null : () => Navigator.pop(context, choice),
           child: const Text('Alterar categoria'),
         ),
       ],

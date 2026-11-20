@@ -203,7 +203,7 @@ Regras de derivação **[ASSUMIDO]**:
 
 ## 7. Seeds de demonstração (RT-63)
 
-- Território "Município Demo", 3 órgãos fictícios (Prefeitura Demo — Zeladoria, Saneamento Demo, Operadora Demo) e 1 ouvidoria de saúde fictícia.
+- Território "Município Demo", 3 órgãos fictícios (Prefeitura Demo — Zeladoria, Saneamento Demo, SPTrans) e 1 ouvidoria de saúde fictícia.
 - Matriz com uma regra por (categoria × território), prazos de referência fictícios (por exemplo, 72 h, 120 h, 240 h).
 - 30 a 50 reportes fictícios espalhados, com eventos variados, para alimentar mapa e painéis.
 

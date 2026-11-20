@@ -165,13 +165,14 @@ class ReportDetailResponse(ReportSummaryResponse):
 
 
 class NearbyItemResponse(BaseModel):
-    """Item público do mapa: sem protocolo, descrição, foto ou autor."""
+    """Item público do mapa: sem protocolo, foto ou autor."""
 
     id: UUID
     group_id: str | None
     status: ReportStatus
     category: ReportCategory | None
     subcategory: str | None = None
+    description: str | None = Field(default=None, max_length=1000)
     lat: float
     lon: float
     confirmation_count: int

@@ -61,7 +61,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
     {'name': 'Poda e Árvores', 'group': 'Risco Urbano', 'icon': 'park'},
     {'name': 'Água e Esgoto', 'group': 'Risco Urbano', 'icon': 'water_drop'},
     {
-      'name': 'Ônibus e Paradas',
+      'name': 'Mobilidade Urbana',
       'group': 'Transporte',
       'icon': 'directions_bus'
     },
@@ -225,7 +225,8 @@ class _NewReportWizardState extends State<NewReportWizard> {
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      throw StateError('Permita o acesso à localização para registrar o local.');
+      throw StateError(
+          'Permita o acesso à localização para registrar o local.');
     }
     return Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
@@ -864,7 +865,7 @@ class _NewReportWizardState extends State<NewReportWizard> {
                         Icon(Icons.check_circle,
                             color: ReclameJaColors.secondaryEmerald, size: 18),
                         SizedBox(width: 6),
-                        Text('Evidência nítida e validada',
+                        Text('Foto anexada',
                             style: TextStyle(
                                 color: ReclameJaColors.secondaryEmerald,
                                 fontWeight: FontWeight.bold,
@@ -1080,21 +1081,18 @@ class _NewReportWizardState extends State<NewReportWizard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (_descriptionController.text.trim().isEmpty)
-                    const SizedBox.shrink()
-                  else
-                    const Row(
-                      children: [
-                        Icon(Icons.check_circle,
-                            color: ReclameJaColors.secondaryEmerald, size: 14),
-                        SizedBox(width: 4),
-                        Text('Boa descrição informada',
-                            style: TextStyle(
-                                color: ReclameJaColors.secondaryEmerald,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: ReclameJaColors.textMuted, size: 14),
+                      SizedBox(width: 4),
+                      Text('Inclua os detalhes que considerar importantes',
+                          style: TextStyle(
+                              color: ReclameJaColors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500)),
+                    ],
+                  ),
                   Text(
                     '${_descriptionController.text.length} / $maxDescriptionLength',
                     style: textTheme.bodySmall

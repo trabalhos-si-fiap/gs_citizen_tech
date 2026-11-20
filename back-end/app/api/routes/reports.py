@@ -170,7 +170,7 @@ def list_nearby_reports(
     cursor: str | None = Query(default=None, max_length=64),
     service: ReportService = Depends(get_report_service),
 ) -> NearbyPageResponse:
-    """Rota pública (sem token): não devolve dados pessoais nem texto livre."""
+    """Rota pública (sem token): não devolve protocolo, foto ou dados pessoais."""
     try:
         page = service.nearby(
             NearbyQuery(
@@ -194,6 +194,7 @@ def list_nearby_reports(
                 status=item.summary.status,
                 category=item.summary.category,
                 subcategory=item.summary.subcategory,
+                description=item.summary.description,
                 lat=item.summary.latitude,
                 lon=item.summary.longitude,
                 confirmation_count=item.summary.confirmation_count,

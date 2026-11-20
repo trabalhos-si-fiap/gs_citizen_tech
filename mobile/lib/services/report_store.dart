@@ -339,7 +339,7 @@ class ReportStore {
         category: 'Transporte',
         subcategory: 'Atendimento e Abrigos',
         status: 'Recebido',
-        organ: 'SPTrans / Operadora Distrital de Transportes',
+        organ: 'SPTrans',
         confirmationCount: 8,
         isUserConfirmed: false,
         clientCreatedAt: '15/10/2026',
@@ -465,7 +465,6 @@ class ReportStore {
   }
 }
 
-
 const _eventTitles = {
   'recebido': 'Reporte recebido',
   'classificado': 'Classificado automaticamente',
@@ -499,8 +498,8 @@ String _actorLabel(String actor) {
 /// O backend devolve alguns horários sem fuso; eles estão em UTC.
 String _asUtcIso(String value) {
   if (value.isEmpty) return value;
-  final hasZone = value.endsWith('Z') ||
-      RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(value);
+  final hasZone =
+      value.endsWith('Z') || RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(value);
   return hasZone ? value : '${value}Z';
 }
 

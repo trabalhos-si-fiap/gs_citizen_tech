@@ -26,13 +26,14 @@ String _statusLabel(String status) => switch (status) {
 
 /// Ocorrência pública devolvida por `GET /v1/reports/nearby`.
 ///
-/// Não tem descrição, protocolo, foto nem autor: a API não publica esses dados.
+/// Não tem protocolo, foto nem autor.
 class NearbyReport {
   const NearbyReport({
     required this.id,
     required this.groupId,
     required this.status,
     required this.category,
+    required this.description,
     required this.latitude,
     required this.longitude,
     required this.confirmationCount,
@@ -45,6 +46,7 @@ class NearbyReport {
         groupId: json['group_id']?.toString(),
         status: json['status']?.toString() ?? 'recebido',
         category: json['category']?.toString(),
+        description: json['description']?.toString() ?? '',
         latitude: (json['lat'] as num).toDouble(),
         longitude: (json['lon'] as num).toDouble(),
         confirmationCount: (json['confirmation_count'] as num?)?.toInt() ?? 0,
@@ -56,6 +58,7 @@ class NearbyReport {
   final String? groupId;
   final String status;
   final String? category;
+  final String description;
   final double latitude;
   final double longitude;
   final int confirmationCount;
@@ -75,7 +78,7 @@ class NearbyReport {
         id: id,
         apiId: id,
         title: categoryLabel,
-        description: '',
+        description: description,
         location: '$distanceLabel de você',
         details: '',
         category: categoryLabel,
@@ -134,16 +137,19 @@ class NearbyClient {
       if (status != null) 'status': status,
       if (cursor != null) 'cursor': cursor,
     });
-    final response = await _http.get(uri, headers: {'Accept': 'application/json'});
+    final response =
+        await _http.get(uri, headers: {'Accept': 'application/json'});
     if (response.statusCode != 200) {
       throw NearbyException(response.statusCode);
     }
-    final body = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final body =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final items = (body['items'] as List? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(NearbyReport.fromJson)
         .toList();
-    return NearbyPage(items: items, nextCursor: body['next_cursor']?.toString());
+    return NearbyPage(
+        items: items, nextCursor: body['next_cursor']?.toString());
   }
 }
 

@@ -32,6 +32,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     }
     return FileImage(File(pathOrUrl));
   }
+
   final _commentController = TextEditingController();
   StreamSubscription<List<Report>>? _storeSubscription;
   Timer? _refreshTimer;
@@ -489,6 +490,49 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   style: textTheme.displayMedium
                       ?.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
+                if (_report.description.trim().isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: ReclameJaColors.surfaceBright,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: ReclameJaColors.borderSlate),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.subject,
+                              color: ReclameJaColors.secondaryEmerald,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Descrição do reporte',
+                              style: textTheme.titleSmall?.copyWith(
+                                color: ReclameJaColors.textDark,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _report.description,
+                          key: const ValueKey('report-detail-description'),
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: ReclameJaColors.textDark,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -787,10 +831,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                                           fontWeight:
                                                               FontWeight.bold,
                                                           fontSize: 13,
-                                                          color:
-                                                              Color(0xFF451A03)),
+                                                          color: Color(
+                                                              0xFF451A03)),
                                                       maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                     ),
                                                   ),
                                                   const SizedBox(width: 8),
@@ -845,7 +890,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                                                               FontWeight.bold,
                                                           fontSize: 13),
                                                       maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis),
+                                                      overflow: TextOverflow
+                                                          .ellipsis),
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Text(event.time,
@@ -1285,7 +1331,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         foregroundColor: ReclameJaColors.textMuted,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -1308,7 +1355,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         foregroundColor: ReclameJaColors.alertRed,
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),

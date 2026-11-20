@@ -34,7 +34,7 @@
       "category": "transporte_publico",
       "subcategory": null,
       "agency_id": "operadora-demo",
-      "agency_name": "Operadora Demo",
+      "agency_name": "SPTrans",
       "agency_email": "transporte@example.org",
       "deadline_hours": 72,
       "valid_from": "2026-01-01T00:00:00Z",

@@ -134,7 +134,7 @@ class StackSmokeTests(unittest.TestCase):
         self.assertEqual(status, 200, nearby)
         items = {item["id"]: item for item in nearby["items"]}
         self.assertIn(report_id, items)
-        self.assertNotIn("description", items[report_id])
+        self.assertEqual(items[report_id]["description"], report["description"])
         self.assertLessEqual(items[report_id]["distance_m"], 10)
 
 

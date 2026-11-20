@@ -41,7 +41,7 @@ WHEN NOT MATCHED THEN
 MERGE INTO agencies target
 USING (
     SELECT 'operadora-demo' agency_id,
-           'Operadora Demo' name,
+           'SPTrans' name,
            'transporte@example.org' contact_email
     FROM dual
 ) source

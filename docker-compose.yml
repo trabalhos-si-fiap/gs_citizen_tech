@@ -120,6 +120,8 @@ services:
     environment:
       <<: *backend-env
       WORKER_HEARTBEAT_FILE: /tmp/worker-heartbeat
+      # Reduz a espera máxima antes de consumir a próxima classificação.
+      REPORT_JOB_POLL_SECONDS: "0.2"
     volumes:
       - photo-data:/app/var/photos
     networks: [data, app]

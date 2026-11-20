@@ -362,12 +362,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
               ),
 
-              // Hero Section (Simulating neighborhood background decoration)
+              // Hero section
               Container(
                 height: 140,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  color: const Color(0xFFF1F5F9),
+                  image: const DecorationImage(
+                    image: AssetImage('assets/images/inicial.jpg'),
+                    fit: BoxFit.cover,
+                  ),
                 ),
                 child: Container(
                   decoration: BoxDecoration(
@@ -376,7 +379,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.4),
+                        Colors.black.withValues(alpha: 0.15),
                         Colors.transparent,
                       ],
                     ),
@@ -672,8 +675,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           fontSize: 13,
                         ),
                         textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                        overflow: TextOverflow.visible,
                       ),
                     ),
                     const Icon(Icons.arrow_forward,

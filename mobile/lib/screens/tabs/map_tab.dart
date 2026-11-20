@@ -179,11 +179,10 @@ class _MapTabState extends State<MapTab> {
                 ),
               MarkerLayer(markers: [
                 Marker(
-                  point: LatLng(
-                      _userPosition.latitude, _userPosition.longitude),
-                  // O ponto fica no centro do marcador; o rótulo, acima dele.
-                  width: _UserLocationPin.width,
-                  height: _UserLocationPin.height,
+                  point:
+                      LatLng(_userPosition.latitude, _userPosition.longitude),
+                  width: 48,
+                  height: 48,
                   child: const _UserLocationPin(),
                 ),
                 ..._store.items.map(_buildMarker),
@@ -224,8 +223,7 @@ class _MapTabState extends State<MapTab> {
                               Text(
                                 'Olá, ${widget.userName} 👋',
                                 style: textTheme.headlineSmall?.copyWith(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold),
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -333,13 +331,17 @@ class _MapTabState extends State<MapTab> {
       selected: isSelected,
       avatar: icon == Icons.all_inclusive
           ? null
-          : Icon(icon,
+          : Icon(
+              icon,
               size: 14,
               color: isSelected
                   ? ReclameJaColors.textDark
-                  : (color ?? ReclameJaColors.textMuted)),
-      label: Text(label),
-      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  : (color ?? ReclameJaColors.textMuted),
+            ),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+      ),
       backgroundColor: Colors.white.withValues(alpha: 0.95),
       selectedColor: ReclameJaColors.primaryYellow,
       showCheckmark: false,

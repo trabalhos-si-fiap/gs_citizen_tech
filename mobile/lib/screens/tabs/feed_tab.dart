@@ -281,6 +281,18 @@ class _FeedTabState extends State<FeedTab> {
                       ),
                     ),
                     const SizedBox(height: 4),
+                    if (report.description.isNotEmpty) ...[
+                      Text(
+                        report.description,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: ReclameJaColors.textMuted,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                     Row(
                       children: [
                         const Icon(Icons.location_on,
@@ -309,8 +321,7 @@ class _FeedTabState extends State<FeedTab> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: statusBg,
                   borderRadius: BorderRadius.circular(12),

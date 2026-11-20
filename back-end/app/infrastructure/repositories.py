@@ -3380,7 +3380,7 @@ class OracleReportRepository:
                     """
                     WITH area_reports AS (
                         SELECT r.id, r.protocol, r.category, r.lat, r.lon,
-                               r.received_at, r.group_id
+                               r.received_at, r.group_id, r.description
                         FROM reports r
                         WHERE r.lat BETWEEN :min_lat AND :max_lat
                           AND r.lon BETWEEN :min_lon AND :max_lon
@@ -3444,6 +3444,7 @@ class OracleReportRepository:
                                ORDER BY e.id DESC
                                FETCH FIRST 1 ROW ONLY
                            ) AS subcategory
+                           ,r.description
                     FROM area_reports r
                     LEFT JOIN report_groups g ON g.id = r.group_id
                     ORDER BY r.received_at DESC
@@ -3466,6 +3467,7 @@ class OracleReportRepository:
                         group_id=str(row[7]),
                         confirmation_count=int(row[8]),
                         subcategory=row[9],
+                        description=row[10],
                     )
                     for row in cursor.fetchall()
                 ]
@@ -4336,5 +4338,4 @@ class OracleAuthRepository:
                 cursor.close()
                 if not committed:
                     connection.rollback()
-
 

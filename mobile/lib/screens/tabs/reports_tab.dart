@@ -28,6 +28,17 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
   String? _loadError;
   bool _isLoading = false;
 
+  String _themeFor(Report report) {
+    if (report.subcategory.trim().isNotEmpty) return report.subcategory;
+    return switch (report.category) {
+      'risco_urbano' => 'Risco urbano',
+      'transporte_publico' => 'Mobilidade urbana',
+      'saude_atendimento' => 'Saúde',
+      'a_classificar' || 'Aguardando classificação' => 'Tema em classificação',
+      _ => report.category,
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -311,6 +322,7 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
 
   Widget _buildReportRowItem(Report r) {
     final textTheme = Theme.of(context).textTheme;
+    final theme = _themeFor(r);
     final isOffline = r.isOffline;
     final isResolved = r.status == 'Resolvido';
     final isInProgress = r.status == 'Em andamento';
@@ -420,7 +432,7 @@ class _ReportsTabState extends State<ReportsTab> with WidgetsBindingObserver {
 
               // Row 2: Title and details
               Text(
-                r.title,
+                theme,
                 style: textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold, fontSize: 15),
                 maxLines: 1,
